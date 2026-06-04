@@ -1,0 +1,17 @@
+# Binaries
+bin/
+main
+server
+
+# Logs
+logs/*.log
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+go.work
+go.work.sum

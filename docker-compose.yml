@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: horsync-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: horsync
+      POSTGRES_USER: horsync
+      POSTGRES_PASSWORD: horsync123
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

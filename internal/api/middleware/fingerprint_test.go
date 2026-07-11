@@ -52,11 +52,11 @@ func TestBuildDeviceFingerprintDeterministic(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/a", nil)
 	req.Header.Set("User-Agent", "GoTest/1.0")
-	app.Test(req, 1000)
+	_, _ = app.Test(req, 1000)
 
 	req2 := httptest.NewRequest("GET", "/b", nil)
 	req2.Header.Set("User-Agent", "GoTest/1.0")
-	app.Test(req2, 1000)
+	_, _ = app.Test(req2, 1000)
 
 	if fp1 == fp2 {
 		t.Log("Same input produces same fingerprint (expected)")

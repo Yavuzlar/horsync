@@ -210,7 +210,9 @@ func TestVaultLogs(t *testing.T) {
 	initialLogs := v.GetLogs()
 	initialCount := len(initialLogs)
 
-	v.Unlock("test-logs")
+	if err := v.Unlock("test-logs"); err != nil {
+		t.Fatalf("unlock failed: %v", err)
+	}
 	v.Lock()
 
 	logs := v.GetLogs()
@@ -242,7 +244,9 @@ func TestVaultLogTrim(t *testing.T) {
 	v.Lock()
 
 	// Generate more than 100 log entries
-	v.Unlock("test")
+	if err := v.Unlock("test"); err != nil {
+		t.Fatalf("unlock failed: %v", err)
+	}
 	for i := 0; i < 120; i++ {
 		v.log(createTestLog("test.event"))
 	}

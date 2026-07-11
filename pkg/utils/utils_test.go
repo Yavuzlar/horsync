@@ -127,7 +127,9 @@ func TestHashSHA256(t *testing.T) {
 	}
 
 	// Deterministic
-	if HashSHA256("hello") != HashSHA256("hello") {
+	h1 := HashSHA256("hello")
+	h2 := HashSHA256("hello")
+	if h1 != h2 {
 		t.Error("Hash should be deterministic")
 	}
 

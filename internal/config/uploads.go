@@ -166,7 +166,7 @@ func (db *Database) RecordUploadChunk(ctx context.Context, sessionID string, chu
 	if err != nil {
 		return models.UploadSession{}, fmt.Errorf("begin upload chunk tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	var existingHash string
 	err = tx.QueryRow(

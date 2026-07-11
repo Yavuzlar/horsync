@@ -133,12 +133,11 @@ func (m *Mesh) RegisterDevice(ctx context.Context, input models.DeviceRegistrati
 		CreatedAt:  now.Format(time.RFC3339),
 	}
 
-	deviceSecretHash := utils.HashSHA256(input.EnrollmentToken + ":" + device.ID)
 	deviceSecret, err := utils.GenerateRandomHex(32)
 	if err != nil {
 		return models.Node{}, fmt.Errorf("generate device secret: %w", err)
 	}
-	deviceSecretHash = utils.HashSHA256(deviceSecret)
+	deviceSecretHash := utils.HashSHA256(deviceSecret)
 	fingerprintHash := strings.ToLower(strings.TrimSpace(input.Fingerprint))
 
 	_, err = db.Pool.Exec(

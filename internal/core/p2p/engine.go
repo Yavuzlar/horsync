@@ -478,7 +478,7 @@ func (p *P2PEngine) handleChunkRequest(pc *PeerConn, msg P2PMessage) {
 	}
 
 	_ = pc.Conn.SetDeadline(time.Now().Add(readDeadline))
-	defer pc.Conn.SetDeadline(time.Time{})
+	defer func() { _ = pc.Conn.SetDeadline(time.Time{}) }()
 
 	if err := pc.Writer.Encode(response); err == nil && len(payload) > 0 {
 		_, _ = pc.Conn.Write(payload)
@@ -507,7 +507,7 @@ func (p *P2PEngine) PullChunkFromPeer(peerID string, sessionID string, chunkInde
 	}
 
 	_ = pc.Conn.SetDeadline(time.Now().Add(readDeadline))
-	defer pc.Conn.SetDeadline(time.Time{})
+	defer func() { _ = pc.Conn.SetDeadline(time.Time{}) }()
 
 	var lastErr error
 	for attempt := 0; attempt < chunkRetryMax; attempt++ {

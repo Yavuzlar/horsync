@@ -119,9 +119,14 @@ export function MainHub() {
   return (
     <div className="flex flex-col gap-6 p-6 h-full overflow-y-auto bg-[#05080f]">
       <div className="flex items-center justify-between border-b border-white/5 pb-6">
-        <div className="flex flex-col">
-          <h2 className="text-2xl font-bold text-white tracking-tight font-mono uppercase">{t('hub.title')}</h2>
-          <p className="text-xs text-gray-500 font-mono uppercase tracking-widest mt-1">{t('hub.subtitle')}</p>
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 rounded-xl border border-blue-500/20 bg-[#0a0f1a] flex items-center justify-center shadow-[0_0_20px_rgba(59,130,246,0.1)] overflow-hidden shrink-0">
+            <img src="/logo.svg" alt="Horsync Logo" className="w-8 h-8 object-contain" />
+          </div>
+          <div className="flex flex-col">
+            <h2 className="text-2xl font-bold text-white tracking-tight font-mono uppercase">{t('hub.title')}</h2>
+            <p className="text-xs text-gray-500 font-mono uppercase tracking-widest mt-1">{t('hub.subtitle')}</p>
+          </div>
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/5 border border-emerald-500/10">

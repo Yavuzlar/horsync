@@ -2,9 +2,6 @@ package topology
 
 import (
 	"context"
-	crand "crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	mrand "math/rand"
@@ -13,12 +10,18 @@ import (
 
 	"horsync/internal/config"
 	"horsync/internal/models"
+	"horsync/pkg/utils"
 
 	"github.com/google/uuid"
 )
 
+// ErrDatabaseNotConfigured is returned when the PostgreSQL pool is not initialized.
 var ErrDatabaseNotConfigured = errors.New("database not configured")
+
+// ErrDeviceNotFound is returned when a device ID does not exist.
 var ErrDeviceNotFound = errors.New("device not found")
+
+// ErrEnrollmentTokenInvalid is returned when an enrollment token is invalid or expired.
 var ErrEnrollmentTokenInvalid = errors.New("invalid or expired enrollment token")
 
 func (m *Mesh) ListDevices(ctx context.Context) ([]models.Node, error) {
@@ -86,13 +89,13 @@ func (m *Mesh) ListDevices(ctx context.Context) ([]models.Node, error) {
 		}
 
 		node.Load = fmt.Sprintf("%d%%", loadPercent)
-		node.Uptime = formatUptime(uptimeSeconds)
-		node.LastSeen = formatLastSeen(lastSeenAt)
+		node.Uptime = utils.FormatUptime(uptimeSeconds)
+		node.LastSeen = utils.FormatLastSeen(lastSeenAt, "Awaiting approval")
 		node.CreatedAt = createdAt.UTC().Format(time.RFC3339)
 		if approvedAt != nil {
 			node.ApprovedAt = approvedAt.UTC().Format(time.RFC3339)
 		}
-		node.FingerprintPreview = previewFingerprint(fingerprintHash)
+		node.FingerprintPreview = utils.PreviewFingerprint(fingerprintHash)
 		devices = append(devices, node)
 	}
 
@@ -118,24 +121,24 @@ func (m *Mesh) RegisterDevice(ctx context.Context, input models.DeviceRegistrati
 	device := models.Node{
 		ID:         buildDeviceID(input.Name),
 		Name:       strings.TrimSpace(input.Name),
-		Type:       normalizeOrDefault(input.Type, fallbackType),
-		Location:   normalizeOrDefault(input.Location, fallbackLocation),
+		Type:       utils.NormalizeValue(input.Type, fallbackType),
+		Location:   utils.NormalizeValue(input.Location, fallbackLocation),
 		Status:     "pending",
-		IP:         normalizeOrDefault(input.IP, "PENDING_ASSIGNMENT"),
+		IP:         utils.NormalizeValue(input.IP, "PENDING_ASSIGNMENT"),
 		Load:       "0%",
 		Uptime:     "0D 00H",
-		OwnerEmail: normalizeOrDefault(input.OwnerEmail, fallbackEmail),
-		SyncMode:   normalizeOrDefault(input.SyncMode, fallbackSyncMode),
+		OwnerEmail: utils.NormalizeValue(input.OwnerEmail, fallbackEmail),
+		SyncMode:   utils.NormalizeValue(input.SyncMode, fallbackSyncMode),
 		LastSeen:   "Awaiting approval",
 		CreatedAt:  now.Format(time.RFC3339),
 	}
 
-	deviceSecretHash := hashOpaque(input.EnrollmentToken + ":" + device.ID)
-	deviceSecret, err := generateDeviceSecret()
+	deviceSecretHash := utils.HashSHA256(input.EnrollmentToken + ":" + device.ID)
+	deviceSecret, err := utils.GenerateRandomHex(32)
 	if err != nil {
 		return models.Node{}, fmt.Errorf("generate device secret: %w", err)
 	}
-	deviceSecretHash = hashOpaque(deviceSecret)
+	deviceSecretHash = utils.HashSHA256(deviceSecret)
 	fingerprintHash := strings.ToLower(strings.TrimSpace(input.Fingerprint))
 
 	_, err = db.Pool.Exec(
@@ -329,13 +332,13 @@ func (m *Mesh) getDeviceByID(ctx context.Context, deviceID string) (models.Node,
 	}
 
 	node.Load = fmt.Sprintf("%d%%", loadPercent)
-	node.Uptime = formatUptime(uptimeSeconds)
-	node.LastSeen = formatLastSeen(lastSeenAt)
+	node.Uptime = utils.FormatUptime(uptimeSeconds)
+	node.LastSeen = utils.FormatLastSeen(lastSeenAt, "Awaiting approval")
 	node.CreatedAt = createdAt.UTC().Format(time.RFC3339)
 	if approvedAt != nil {
 		node.ApprovedAt = approvedAt.UTC().Format(time.RFC3339)
 	}
-	node.FingerprintPreview = previewFingerprint(fingerprintHash)
+	node.FingerprintPreview = utils.PreviewFingerprint(fingerprintHash)
 	return node, nil
 }
 
@@ -357,7 +360,7 @@ func resolveEnrollment(ctx context.Context, db *config.Database, token string) (
 			AND status = 'pending_registration'
 			AND expires_at > NOW()
 		`,
-		hashOpaque(token),
+		utils.HashSHA256(token),
 	).Scan(&id, &deviceType, &location, &email, &syncMode)
 	if err != nil {
 		return "", "", "", "", "", ErrEnrollmentTokenInvalid
@@ -378,66 +381,3 @@ func buildDeviceID(name string) string {
 
 	return fmt.Sprintf("YVS-%s-%s", prefix, strings.ToUpper(uuid.NewString()[:6]))
 }
-
-func normalizeOrDefault(value string, fallback string) string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return fallback
-	}
-
-	return trimmed
-}
-
-func formatUptime(totalSeconds int64) string {
-	if totalSeconds <= 0 {
-		return "0D 00H"
-	}
-
-	duration := time.Duration(totalSeconds) * time.Second
-	days := duration / (24 * time.Hour)
-	duration -= days * 24 * time.Hour
-	hours := duration / time.Hour
-
-	return fmt.Sprintf("%dD %02dH", days, hours)
-}
-
-func formatLastSeen(value *time.Time) string {
-	if value == nil {
-		return "Awaiting approval"
-	}
-
-	elapsed := time.Since(value.UTC())
-	switch {
-	case elapsed < time.Minute:
-		return "Just now"
-	case elapsed < time.Hour:
-		return fmt.Sprintf("%dm ago", int(elapsed.Minutes()))
-	case elapsed < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(elapsed.Hours()))
-	default:
-		return fmt.Sprintf("%dd ago", int(elapsed.Hours()/24))
-	}
-}
-
-func hashOpaque(value string) string {
-	sum := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(sum[:])
-}
-
-func previewFingerprint(value string) string {
-	if len(value) <= 12 {
-		return value
-	}
-
-	return value[:12]
-}
-
-func generateDeviceSecret() (string, error) {
-	raw := make([]byte, 32)
-	if _, err := crand.Read(raw); err != nil {
-		return "", err
-	}
-
-	return hex.EncodeToString(raw), nil
-}
-

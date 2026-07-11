@@ -13,6 +13,7 @@ export interface Device {
   createdAt: string;
   approvedAt?: string;
   fingerprintPreview?: string;
+  deviceSecret?: string;
 }
 
 export interface DeviceRegistrationInput {

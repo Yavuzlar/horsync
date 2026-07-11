@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"horsync/internal/models"
+	"horsync/pkg/utils"
 
 	"github.com/google/uuid"
 )
@@ -17,6 +18,7 @@ import (
 var ErrUploadSessionNotFound = errors.New("upload session not found")
 var ErrChunkAlreadyUploaded = errors.New("chunk already uploaded")
 
+// CreateUploadSession registers a new file upload session in the database with the provided metadata.
 func (db *Database) CreateUploadSession(ctx context.Context, actor models.User, input models.UploadSessionInput, fingerprint string, storagePath string) (models.UploadSession, error) {
 	now := time.Now().UTC()
 	session := models.UploadSession{
@@ -88,6 +90,7 @@ func (db *Database) CreateUploadSession(ctx context.Context, actor models.User, 
 	return session, nil
 }
 
+// GetUploadSession retrieves an upload session by its ID, or returns ErrUploadSessionNotFound.
 func (db *Database) GetUploadSession(ctx context.Context, sessionID string) (models.UploadSession, error) {
 	var (
 		session     models.UploadSession
@@ -157,6 +160,7 @@ func (db *Database) GetUploadSession(ctx context.Context, sessionID string) (mod
 	return session, nil
 }
 
+// RecordUploadChunk persists a received chunk's metadata and updates the session progress atomically.
 func (db *Database) RecordUploadChunk(ctx context.Context, sessionID string, chunkIndex int, chunkSize int, chunkSHA256 string) (models.UploadSession, error) {
 	tx, err := db.Pool.Begin(ctx)
 	if err != nil {
@@ -225,6 +229,7 @@ func (db *Database) RecordUploadChunk(ctx context.Context, sessionID string, chu
 	return db.GetUploadSession(ctx, sessionID)
 }
 
+// UploadChunkExists checks whether a specific chunk has already been received for the given upload session.
 func (db *Database) UploadChunkExists(ctx context.Context, sessionID string, chunkIndex int) (bool, error) {
 	var exists bool
 	err := db.Pool.QueryRow(
@@ -246,6 +251,7 @@ func (db *Database) UploadChunkExists(ctx context.Context, sessionID string, chu
 	return exists, nil
 }
 
+// CompleteUploadSession marks an upload session as completed with the computed SHA256 and integrity status.
 func (db *Database) CompleteUploadSession(ctx context.Context, sessionID string, actualSHA256 string, integrityStatus string) error {
 	status := "completed"
 	completedAt := time.Now().UTC()
@@ -273,6 +279,7 @@ func (db *Database) CompleteUploadSession(ctx context.Context, sessionID string,
 	return nil
 }
 
+// ListFiles returns all completed file upload sessions enriched with file type, size, and metadata status.
 func (db *Database) ListFiles(ctx context.Context) ([]models.File, error) {
 	rows, err := db.Pool.Query(
 		ctx,
@@ -357,9 +364,9 @@ func (db *Database) ListFiles(ctx context.Context) ([]models.File, error) {
 			ID:          index,
 			Name:        fileName,
 			Type:        inferFileType(fileName, contentType),
-			Size:        formatBytes(totalSize),
+			Size:        utils.FormatBytes(totalSize),
 			Status:      statuses,
-			Date:        formatRelativeTime(createdAt),
+			Date:        utils.FormatRelativeTime(createdAt),
 			SHA256:      actualSHA256,
 			Integrity:   integrityStatus,
 			ChunkSize:   chunkSize,
@@ -403,39 +410,7 @@ func inferFileType(fileName string, contentType string) string {
 	return "archive"
 }
 
-func formatBytes(totalSize int64) string {
-	const (
-		kb = 1024
-		mb = 1024 * kb
-		gb = 1024 * mb
-	)
-
-	switch {
-	case totalSize >= gb:
-		return fmt.Sprintf("%.1f GB", float64(totalSize)/gb)
-	case totalSize >= mb:
-		return fmt.Sprintf("%.1f MB", float64(totalSize)/mb)
-	case totalSize >= kb:
-		return fmt.Sprintf("%.1f KB", float64(totalSize)/kb)
-	default:
-		return fmt.Sprintf("%d B", totalSize)
-	}
-}
-
-func formatRelativeTime(createdAt time.Time) string {
-	elapsed := time.Since(createdAt.UTC())
-	switch {
-	case elapsed < time.Minute:
-		return "Just now"
-	case elapsed < time.Hour:
-		return fmt.Sprintf("%dm ago", int(elapsed.Minutes()))
-	case elapsed < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(elapsed.Hours()))
-	default:
-		return fmt.Sprintf("%dd ago", int(elapsed.Hours()/24))
-	}
-}
-
+// HasMetadataOnDisk checks if a stored file has detectable sensitive metadata (EXIF, PDF author, XMP).
 func HasMetadataOnDisk(sessionID string, fileName string) bool {
 	filePath := filepath.Join("data/uploads", sessionID, strings.TrimSuffix(fileName, filepath.Ext(fileName))+".part")
 	if _, err := os.Stat(filePath); err != nil {
@@ -481,4 +456,3 @@ func HasMetadataOnDisk(sessionID string, fileName string) bool {
 	}
 	return false
 }
-

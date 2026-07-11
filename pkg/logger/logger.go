@@ -20,6 +20,7 @@ type Config struct {
 
 var L *slog.Logger
 
+// Init configures the global structured logger (slog) with the specified level, output format, and optional file logging.
 func Init(cfg Config) {
 	var writer io.Writer = os.Stdout
 

@@ -11,6 +11,7 @@ import (
 
 const userContextKey = "auth_user"
 
+// RequireAuth validates the bearer token and sets the authenticated user in context.
 func RequireAuth(c *fiber.Ctx) error {
 	db := config.GetDatabase()
 	if db == nil {
@@ -44,6 +45,7 @@ func RequireAuth(c *fiber.Ctx) error {
 	return c.Next()
 }
 
+// CurrentUser retrieves the authenticated user from the request context.
 func CurrentUser(c *fiber.Ctx) models.User {
 	if value := c.Locals(userContextKey); value != nil {
 		if user, ok := value.(models.User); ok {

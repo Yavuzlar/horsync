@@ -24,6 +24,7 @@ var sharedRateLimiter = &rateLimiter{
 	entries: make(map[string]rateLimitEntry),
 }
 
+// FixedWindowRateLimit returns a middleware that limits requests within a fixed time window.
 func FixedWindowRateLimit(name string, limit int, window time.Duration, keyFunc func(*fiber.Ctx) string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		if limit <= 0 || window <= 0 {

@@ -12,6 +12,7 @@ type Config struct {
 	MaxChunkSizeBytes int
 }
 
+// Load reads environment variables and returns a populated Config with sensible defaults.
 func Load() Config {
 	cfg := Config{
 		AppAddr:           envOrDefault("APP_ADDR", ":3001"),

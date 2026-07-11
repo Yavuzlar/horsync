@@ -65,9 +65,14 @@ export function SecurityVaultView() {
   return (
     <div className="flex-1 p-8 overflow-y-auto w-full bg-[#05080f]">
       <div className="flex items-center justify-between mb-8 border-b border-white/5 pb-6">
-        <div className="flex flex-col">
-          <h2 className="text-2xl font-bold text-white tracking-tight font-mono uppercase">{t('security.title')}</h2>
-          <p className="text-xs text-gray-500 font-mono uppercase tracking-widest mt-1">{t('security.subtitle')}</p>
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 rounded-xl border border-blue-500/20 bg-[#0a0f1a] flex items-center justify-center shadow-[0_0_20px_rgba(59,130,246,0.1)] overflow-hidden shrink-0">
+            <img src="/logo.svg" alt="Horsync Logo" className="w-8 h-8 object-contain" />
+          </div>
+          <div className="flex flex-col">
+            <h2 className="text-2xl font-bold text-white tracking-tight font-mono uppercase">{t('security.title')}</h2>
+            <p className="text-xs text-gray-500 font-mono uppercase tracking-widest mt-1">{t('security.subtitle')}</p>
+          </div>
         </div>
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
           <Shield className="w-3 h-3 text-emerald-400" />
@@ -214,14 +219,25 @@ export function SecurityVaultView() {
                 />
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     if (isVaultActive) {
-                      setVaultPassphrase('');
-                      setIsVaultActive(false);
-                      setVaultStatusMsg('Vault is locked. No encryption keys are loaded.');
+                      try {
+                        await api.vaultLock();
+                        setVaultPassphrase('');
+                        setIsVaultActive(false);
+                        setVaultStatusMsg('Vault is locked. No encryption keys are loaded.');
+                      } catch (err) {
+                        setVaultStatusMsg('Failed to lock vault: ' + (err instanceof Error ? err.message : 'unknown error'));
+                      }
                     } else if (vaultPassphrase.trim() !== '') {
-                      setIsVaultActive(true);
-                      setVaultStatusMsg('Zero-Knowledge active. Keys successfully loaded in browser memory.');
+                      try {
+                        const result = await api.vaultUnlock(vaultPassphrase);
+                        setIsVaultActive(true);
+                        setVaultStatusMsg('Zero-Knowledge active. Key fingerprint: ' + result.keyFingerprint);
+                        setVaultPassphrase('');
+                      } catch (err) {
+                        setVaultStatusMsg('Failed to unlock vault: ' + (err instanceof Error ? err.message : 'unknown error'));
+                      }
                     }
                   }}
                   className={cn(

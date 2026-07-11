@@ -43,9 +43,14 @@ export function NodeActivity() {
   return (
     <div className="flex flex-col h-full bg-[#05080f] border-l border-white/5 p-6 overflow-y-auto">
       <div className="flex items-center justify-between mb-8">
-        <div className="flex flex-col">
-          <h2 className="text-lg font-bold text-white tracking-tight font-mono uppercase">{t('nodes.side.title')}</h2>
-          <p className="text-[10px] text-gray-500 font-mono uppercase tracking-widest mt-1">{t('nodes.side.subtitle')}</p>
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg border border-blue-500/20 bg-[#0a0f1a] flex items-center justify-center overflow-hidden shrink-0">
+            <img src="/logo.svg" alt="Horsync Logo" className="w-7 h-7 object-contain" />
+          </div>
+          <div className="flex flex-col">
+            <h2 className="text-lg font-bold text-white tracking-tight font-mono uppercase">{t('nodes.side.title')}</h2>
+            <p className="text-[10px] text-gray-500 font-mono uppercase tracking-widest mt-1">{t('nodes.side.subtitle')}</p>
+          </div>
         </div>
         <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20">
           <Wifi className="w-3.5 h-3.5 text-blue-400" />

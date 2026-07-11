@@ -36,10 +36,12 @@ func GetInstance() *Monitor {
 }
 
 // Start begins the background monitoring task.
+// Start begins the background monitoring task.
 func (m *Monitor) Start() {
 	go m.loop()
 }
 
+// Stop halts the background monitoring task.
 // Stop halts the background monitoring task.
 func (m *Monitor) Stop() {
 	close(m.stopCh)

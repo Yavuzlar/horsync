@@ -52,10 +52,12 @@ func GetInstance() *Manager {
 	return instance
 }
 
+// Start ensures the upload storage directory exists, creating it if necessary.
 func (m *Manager) Start() error {
 	return os.MkdirAll(m.storagePath, 0o755)
 }
 
+// CreateUploadSession validates the input, creates a database upload session, and pre-allocates the local file for chunk writes.
 func (m *Manager) CreateUploadSession(ctx context.Context, actor models.User, input models.UploadSessionInput, fingerprint string) (models.UploadSession, error) {
 	if strings.TrimSpace(input.FileName) == "" || input.TotalSize <= 0 {
 		return models.UploadSession{}, ErrInvalidUploadSession
@@ -109,6 +111,7 @@ func (m *Manager) CreateUploadSession(ctx context.Context, actor models.User, in
 	return session, nil
 }
 
+// SaveChunk validates, hashes, and writes a single chunk to disk, then records it in the database.
 func (m *Manager) SaveChunk(ctx context.Context, sessionID string, chunkIndex int, payload []byte, providedSHA256 string) (models.UploadChunkResult, error) {
 	unlock := m.lockSession(sessionID)
 	defer unlock()
@@ -178,6 +181,7 @@ func (m *Manager) SaveChunk(ctx context.Context, sessionID string, chunkIndex in
 	}, nil
 }
 
+// FinalizeUpload completes an upload session: verifies completeness, applies metadata wiping, computes the final SHA256, and persists integrity status.
 func (m *Manager) FinalizeUpload(ctx context.Context, sessionID string) (models.File, error) {
 	unlock := m.lockSession(sessionID)
 	defer unlock()
@@ -263,6 +267,7 @@ func (m *Manager) FinalizeUpload(ctx context.Context, sessionID string) (models.
 	return m.fileEntryForSession(completedSession)
 }
 
+// GetUploadSession retrieves an upload session by ID via the database layer.
 func (m *Manager) GetUploadSession(ctx context.Context, sessionID string) (models.UploadSession, error) {
 	db := config.GetDatabase()
 	if db == nil || db.Pool == nil {
@@ -277,6 +282,7 @@ func (m *Manager) GetUploadSession(ctx context.Context, sessionID string) (model
 	return session, nil
 }
 
+// GetReplicationManifest fetches the replication manifest (file metadata and chunk list) for the given job and device.
 func (m *Manager) GetReplicationManifest(ctx context.Context, jobID string, deviceID string) (models.ReplicationManifest, error) {
 	db := config.GetDatabase()
 	if db == nil || db.Pool == nil {
@@ -294,6 +300,7 @@ func (m *Manager) GetReplicationManifest(ctx context.Context, jobID string, devi
 	return manifest, nil
 }
 
+// ReadReplicationChunk reads a specific chunk from the stored file for replication to the destination device, optionally applying bandwidth throttling.
 func (m *Manager) ReadReplicationChunk(ctx context.Context, jobID string, deviceID string, chunkIndex int) ([]byte, models.UploadChunkMeta, error) {
 	manifest, err := m.GetReplicationManifest(ctx, jobID, deviceID)
 	if err != nil {
@@ -345,6 +352,7 @@ func (m *Manager) ReadReplicationChunk(ctx context.Context, jobID string, device
 	return buf[:n], chunk, nil
 }
 
+// CompleteReplication finalizes a replication job by recording the device's acknowledgement (success or failure).
 func (m *Manager) CompleteReplication(ctx context.Context, jobID string, deviceID string, input models.ReplicationAckInput) (models.ReplicationJob, error) {
 	db := config.GetDatabase()
 	if db == nil || db.Pool == nil {
@@ -416,6 +424,7 @@ func (m *Manager) lockSession(sessionID string) func() {
 	return lock.Unlock
 }
 
+// WipeEXIF removes EXIF (APP1) segments from a JPEG file in-place.
 func (m *Manager) WipeEXIF(filePath string) error {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -470,6 +479,7 @@ func (m *Manager) WipeEXIF(filePath string) error {
 	return nil
 }
 
+// WipeDocMetadata strips PDF Info fields (Author, Creator, etc.) and XMP XML metadata streams from a file in-place.
 func (m *Manager) WipeDocMetadata(filePath string) error {
 	data, err := os.ReadFile(filePath)
 	if err != nil {

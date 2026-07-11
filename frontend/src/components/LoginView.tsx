@@ -1,6 +1,6 @@
 import type { FormEvent } from 'react';
 import { useState } from 'react';
-import { LockKeyhole, ShieldCheck } from 'lucide-react';
+import { LockKeyhole } from 'lucide-react';
 import type { LoginInput } from '../lib/types';
 import { cn } from '../lib/utils';
 import { useLanguage } from '../lib/i18n';
@@ -50,10 +50,14 @@ export function LoginView({ onLogin, error, loading }: LoginViewProps) {
         </div>
 
         <div className="mb-8">
-          <div className="w-14 h-14 rounded-2xl border border-blue-500/20 bg-blue-500/10 flex items-center justify-center mb-5">
-            <ShieldCheck className="w-7 h-7 text-blue-400" />
+          <div className="flex items-center gap-4 mb-5">
+            <div className="w-14 h-14 rounded-2xl border border-blue-500/20 bg-[#0a0f1a] flex items-center justify-center shadow-[0_0_30px_rgba(59,130,246,0.15)] overflow-hidden">
+              <img src="/logo.svg" alt="Horsync Logo" className="w-10 h-10 object-contain" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold font-mono tracking-tight uppercase text-white">{t('login.title')}</h1>
+            </div>
           </div>
-          <h1 className="text-2xl font-bold font-mono tracking-tight uppercase text-white">{t('login.title')}</h1>
           <p className="mt-3 text-sm text-gray-400 leading-relaxed">{t('login.description')}</p>
         </div>
 

@@ -3,8 +3,7 @@ package routes
 import (
 	"horsync/internal/api/handlers"
 	"horsync/internal/api/middleware"
-	"net"
-	"strings"
+	"horsync/pkg/utils"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -20,7 +19,7 @@ func Register(app *fiber.App) {
 		return c.JSON(fiber.Map{
 			"status":   "ok",
 			"version":  "1.2.4-beta",
-			"local_ip": getLocalIP(),
+			"local_ip": utils.GetLocalIP(),
 		})
 	})
 
@@ -51,6 +50,14 @@ func Register(app *fiber.App) {
 	protected.Post("/devices/:id/reject", handlers.RejectDevice)
 	protected.Get("/settings/instance", handlers.GetInstanceSettings)
 	protected.Put("/settings/instance", handlers.UpdateInstanceSettings)
+
+	// Vault (Zero-Knowledge Encryption)
+	protected.Get("/vault/status", handlers.VaultStatus)
+	protected.Post("/vault/unlock", handlers.VaultUnlock)
+	protected.Post("/vault/lock", handlers.VaultLock)
+	protected.Post("/vault/encrypt", handlers.VaultEncrypt)
+	protected.Post("/vault/decrypt", handlers.VaultDecrypt)
+
 	protected.Post("/uploads/sessions", middleware.FixedWindowRateLimit("upload_session", 20, 10*time.Minute, nil), handlers.CreateUploadSession)
 	protected.Get("/uploads/:id", handlers.GetUploadSession)
 	protected.Put("/uploads/:id/chunks/:index", middleware.FixedWindowRateLimit("upload_chunk", 240, 10*time.Minute, func(c *fiber.Ctx) string {
@@ -59,33 +66,4 @@ func Register(app *fiber.App) {
 	protected.Post("/uploads/:id/finalize", middleware.FixedWindowRateLimit("upload_finalize", 30, 10*time.Minute, nil), handlers.FinalizeUpload)
 }
 
-func getLocalIP() string {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return "127.0.0.1"
-	}
-	for _, address := range addrs {
-		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				ipStr := ipnet.IP.String()
-				// Exclude standard virtual network interface adapters and APIPA link-local addresses
-				if !strings.HasPrefix(ipStr, "192.168.217.") && !strings.HasPrefix(ipStr, "192.168.111.") && !strings.HasPrefix(ipStr, "172.") && !strings.HasPrefix(ipStr, "169.254.") {
-					return ipStr
-				}
-			}
-		}
-	}
-	// Fallback to first non-loopback, non-APIPA IPv4 address
-	for _, address := range addrs {
-		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				ipStr := ipnet.IP.String()
-				if !strings.HasPrefix(ipStr, "169.254.") {
-					return ipStr
-				}
-			}
-		}
-	}
-	return "127.0.0.1"
-}
 

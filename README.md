@@ -1,98 +1,108 @@
-# 🌌 Horsync: Next-Gen Hybrid P2P & SaaS File Sync & Privacy Suite
+<div align="center">
+  <img src="assets/images/banner.png" alt="Horsync Banner" width="800">
+</div>
 
-Horsync is a high-performance, cyberpunk-themed file synchronization and privacy suite that combines centralized SaaS control (Hub) with secure, direct peer-to-peer (P2P) block exchange between client nodes. 
+<p align="center">
+  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
+  <img src="https://img.shields.io/github/go-mod/go-version/Yavuzlar/horsync" alt="Go Version">
+  <img src="https://img.shields.io/github/v/release/Yavuzlar/horsync" alt="Release">
+  <img src="https://img.shields.io/github/actions/workflow/status/Yavuzlar/horsync/ci.yml?branch=main" alt="CI">
 
-It is designed to bypass traditional browser constraints, incorporating client-side zero-knowledge encryption, automated metadata stripping, and cross-platform native background services.
+  <br>
 
----
-
-## 🏗️ Architectural Overview & Core Engine
-
-Horsync operates on a hybrid architecture to optimize security, control, and transfer speeds:
-
-```mermaid
-graph TD
-    Hub[Central Hub SaaS Server: Go Fiber] <-->|HTTPS API / WebSockets| AgentA[Sync Agent A: Local PC]
-    Hub <-->|HTTPS API / WebSockets| AgentB[Sync Agent B: Remote PC]
-    AgentA <-->|Direct TLS Sockets: Port 22000| AgentB
-    AgentA -.->|UDP Multicast Discovery: Port 21027| AgentB
-```
-
-1. **SaaS Control Plane (Hub)**: A Go-based Fiber server managing device enrollments, system configurations, automated rules, audit logs, and network coordination.
-2. **Direct P2P Block Exchange (BEP)**: Direct TCP socket connections (Port `22000`) wrapped in secure TLS. A custom Block Exchange Protocol allows client nodes to request and sync data blocks directly without passing payloads through the central Hub.
-3. **UDP Multicast Discovery**: Passive LAN broadcast listening on Port `21027` that automatically discovers local peer nodes and renders them dynamically in the UI.
-4. **Zero-Knowledge Vault**: Browser-side client encryption using AES-GCM 256-bit keys derived locally via PBKDF2 (100,000 iterations). Raw keys never leave local RAM.
-5. **Metadata Stripping Engine**: Native binary handlers that strip sensitive EXIF (GPS, camera model) from images and XML XMP/Metadata info from PDF/Office documents during transfer finalization.
+  <a href="#features">Features</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#documentation">Docs</a> •
+  <a href="#contributing">Contributing</a>
+</p>
 
 ---
 
-## 🔥 Key Features
-
-* **Dynamic OS Detection & Onboarding**: Automatically detects client operating systems on the onboarding dashboard, highlighting the recommended script downloader with a glowing neon frame. It generates tailored Windows `.bat` and Linux/macOS `.sh` 1-click installer scripts.
-* **Smart Local IP Auto-Discovery**: Excludes virtual network adapter ranges (WSL `172.`, VMnet `192.168.111.`, APIPA `169.254.`) to identify the main LAN network IP and pre-bake it into generated installer scripts for instant zero-config agent connection.
-* **Interactive SVG Mesh Topology Map**: Renders centralized and direct direct P2P link animations with color-coded status packet pulses (Green: Active, Amber: Pending, Grey: Offline). Clicking a node launches a floating real-time telemetry details drawer (CPU, Uptime, IP, Sync Mode).
-* **HTML5 Directory/Folder Upload**: Allows dragging or choosing entire folders recursively from the browser. Directory structures are preserved, staged, and shown in an interactive cyberpunk **"Folder Import Verification Required"** panel for explicit user approval before sequential chunked transfer begins.
-* **P2P High Approval Mode (Strict Verification)**: An database-driven security toggle. When active, direct peer-to-peer connection requests are rejected immediately during the TLS handshake unless the node is marked as `"active"` in the PostgreSQL control plane database.
-* **Bandwidth Governor & Throttling**: A token-bucket rate limiter that restricts download speeds to a maximum threshold (e.g., `128 KB/s`) when configured, avoiding local network congestion.
+Horsync combines a centralized SaaS control plane (Hub) with direct peer-to-peer block exchange between client nodes, featuring client-side encryption, automated metadata stripping, and cross-platform background agents.
 
 ---
 
-## 🛠️ Setup and Installation
+## Features
+
+- **Hybrid Architecture** — Central Hub + direct P2P transfers between nodes
+- **Zero-Knowledge Encryption** — AES-GCM 256-bit with PBKDF2 key derivation
+- **Metadata Stripping** — EXIF removal from images, XMP stripping from PDFs/Office docs
+- **P2P Mesh Discovery** — UDP multicast (port 21027) for automatic LAN peer discovery
+- **Secure Transfers** — TLS 1.2+ encrypted TCP (port 22000) with strict approval mode
+- **Background Agent** — Cross-platform sync agent (Windows, Linux, macOS)
+- **Chunked Uploads** — Resumable, integrity-verified with SHA-256 validation
+- **Bandwidth Governance** — Token-bucket rate limiting
+- **Automation Rules** — Configurable policies for encryption, metadata wiping, archival
+
+---
+
+## Quick Start
 
 ### Prerequisites
-* **Golang** (v1.20 or higher)
-* **Node.js** (v18 or higher)
-* **Docker Desktop** (for database virtualization)
 
-### Quick Start (Windows Dev Runner)
-Execute the unified starter batch script in the root directory:
-```bash
+Go 1.22+, Node.js 18+, Docker Desktop (for PostgreSQL).
+
+### Windows
+
+```powershell
 run_mvp.bat
 ```
-This automated script will:
-1. Spin up the PostgreSQL database container on port `5433`.
-2. Install frontend npm dependencies.
-3. **Automatically compile the fresh Go server binary (`bin/horsync.exe`).**
-4. Launch both the Hub server and Vite dev server in parallel.
-5. Automatically open the browser at `http://localhost:3000`.
 
-### Default Credentials
-* **Username:** `admin@horsync.local`
-* **Password:** `admin12345`
+### Manual
+
+```bash
+docker compose up -d postgres
+cp .env.example .env
+cd frontend && npm install && cd ..
+go build -o bin/horsync ./cmd/horsync
+DATABASE_URL="postgres://horsync:horsync123@localhost:5433/horsync?sslmode=disable" bin/horsync
+# Another terminal:
+cd frontend && npm run dev
+```
+
+Then open **http://localhost:3000**.
+
+| Default Login | |
+|---|---|
+| Email | `admin@horsync.local` |
+| Password | `admin12345` |
 
 ---
 
-## 🧪 Verification & Testing Scenarios
+## Tests
 
-Use the following scenarios to evaluate the platform's security and synchronization mechanics:
+```bash
+go test ./... -v -race -count=1
+cd frontend && npx tsc --noEmit && npm run build
+```
 
-### Test 1: Dynamic Agent Onboarding & IP Verification
-1. Open the Hub UI and navigate to the **Nodes** panel.
-2. Generate an enrollment token and register a device.
-3. Click the pulsing **Download Windows Installer (.bat)** button.
-4. Verify the downloaded script is pre-filled with the Hub's real LAN network IP (e.g. `http://192.168.1.112:3001`) instead of `localhost`.
-5. Run the `.bat` script next to `horsync.exe` on a 2nd PC on the same network to verify the agent successfully connects and displays as `active`.
+---
 
-### Test 2: Recursive Folder Upload Staging
-1. Go to the **File Explorer** tab and select **Choose Folder**.
-2. Stage a directory containing nested files.
-3. Inspect the amber-glowing **Folder Import Verification Required** panel displaying the folder name, file count, and cumulative size.
-4. Click **Approve & Sync Folder** and watch the sequential chunked uploads stream relative to the global progress bar.
-5. Check `data/uploads/[SESSION_ID]/` on the host filesystem to verify the directory structure was recursively generated.
+## Documentation
 
-### Test 3: Metadata Stripping & Audit Logs
-1. Change the metadata mode to **Warn & Confirm** in the Policies tab.
-2. Upload a JPEG image containing GPS EXIF coordinates.
-3. Verify the file shows a blinking amber **"Sensitive Metadata (EXIF/GPS) Detected"** warning badge.
-4. Click **1-Click Wipe** to strip metadata, and verify the badge turns green (**"Safe & Clean"**) and the file's SHA-256 hash updates dynamically.
-5. Navigate to the **Control Hub** dashboard to verify the `file.metadata.wipe` action was recorded in the system audit logs.
+- [Contributing](CONTRIBUTING.md)
+- [Frontend](frontend/README.md)
 
-### Test 4: ZK Cryptographic Vault
-1. Open the **Security Vault** tab and set a master passphrase.
-2. Lock a directory to trigger in-browser client-side encryption.
-3. Verify files on the host system are fully encrypted using **AES-GCM 256-bit** and that raw files cannot be read without the password.
+---
 
-### Test 5: Strict P2P Handshake Validation
-1. Enable **"P2P High Approval Mode"** in Settings.
-2. Change the status of a registered node to `pending` or `rejected` in the Nodes list.
-3. Attempt to start the direct agent on that node and verify the TLS connection is instantly terminated during the handshake phase.
+## Contributing
+
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+## License
+
+MIT License — see [LICENSE](LICENSE).
+
+---
+
+<div align="center">
+  <sub>Built by <a href="https://github.com/Yavuzlar">Yavuzlar</a></sub>
+  <br><br>
+  <a href="https://yavuzlar.org">🌐 Website</a> •
+  <a href="https://x.com/siberyavuzlar">🐦 X/Twitter</a> •
+  <a href="https://linkedin.com/company/siberyavuzlar">💼 LinkedIn</a> •
+  <a href="https://instagram.com/siberyavuzlar">📸 Instagram</a> •
+  <a href="mailto:cyberyavuzlar@gmail.com">✉️ Email</a>
+</div>

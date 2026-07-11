@@ -17,6 +17,7 @@ import (
 
 const sessionTTL = 24 * time.Hour
 
+// CreateSession authenticates a user by email and password, creates an auth session, and returns the raw session token.
 func (db *Database) CreateSession(ctx context.Context, input models.LoginInput) (models.AuthSession, error) {
 	user, passwordHash, err := db.getUserByEmail(ctx, input.Email)
 	if err != nil {
@@ -64,6 +65,7 @@ func (db *Database) CreateSession(ctx context.Context, input models.LoginInput) 
 	}, nil
 }
 
+// ValidateSession looks up an active (non-expired) auth session by its token hash and returns the associated user.
 func (db *Database) ValidateSession(ctx context.Context, token string) (models.User, error) {
 	var (
 		user      models.User
@@ -93,6 +95,7 @@ func (db *Database) ValidateSession(ctx context.Context, token string) (models.U
 	return user, nil
 }
 
+// CreateDeviceEnrollment generates an opaque enrollment token and registers a new device enrollment record.
 func (db *Database) CreateDeviceEnrollment(ctx context.Context, actor models.User, input models.DeviceEnrollmentInput) (models.DeviceEnrollment, error) {
 	rawToken, tokenHash, err := generateOpaqueToken()
 	if err != nil {
@@ -166,6 +169,7 @@ func (db *Database) CreateDeviceEnrollment(ctx context.Context, actor models.Use
 	return enrollment, nil
 }
 
+// ListDeviceEnrollments returns all device enrollment records ordered by creation date descending.
 func (db *Database) ListDeviceEnrollments(ctx context.Context) ([]models.DeviceEnrollment, error) {
 	rows, err := db.Pool.Query(
 		ctx,
@@ -226,6 +230,7 @@ func (db *Database) ListDeviceEnrollments(ctx context.Context) ([]models.DeviceE
 	return result, rows.Err()
 }
 
+// GetAuditLogs retrieves the most recent audit log entries up to the given limit.
 func (db *Database) GetAuditLogs(ctx context.Context, limit int) ([]models.AuditLog, error) {
 	if limit <= 0 {
 		limit = 50
@@ -262,6 +267,7 @@ func (db *Database) GetAuditLogs(ctx context.Context, limit int) ([]models.Audit
 	return result, rows.Err()
 }
 
+// WriteAuditLog inserts a new audit trail entry recording the specified action and its outcome.
 func (db *Database) WriteAuditLog(ctx context.Context, action string, actor string, targetType string, targetID string, status string, message string) error {
 	_, err := db.Pool.Exec(
 		ctx,

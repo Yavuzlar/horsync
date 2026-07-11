@@ -18,6 +18,7 @@ type Database struct {
 
 var currentDatabase *Database
 
+// InitDatabase creates a new connection pool to the PostgreSQL database and verifies connectivity.
 func InitDatabase(ctx context.Context, databaseURL string) (*Database, error) {
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
@@ -37,10 +38,12 @@ func InitDatabase(ctx context.Context, databaseURL string) (*Database, error) {
 	return db, nil
 }
 
+// GetDatabase returns the global Database instance previously created by InitDatabase.
 func GetDatabase() *Database {
 	return currentDatabase
 }
 
+// Close shuts down the underlying PostgreSQL connection pool.
 func (db *Database) Close() {
 	if db == nil || db.Pool == nil {
 		return
@@ -49,6 +52,7 @@ func (db *Database) Close() {
 	db.Pool.Close()
 }
 
+// Migrate runs all database schema migrations and seeds initial data (admin user, settings, automation rules).
 func (db *Database) Migrate(ctx context.Context) error {
 	statements := []string{
 		`
@@ -60,7 +64,7 @@ func (db *Database) Migrate(ctx context.Context) error {
 			role TEXT NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL
 		);
-		`,
+			`,
 		`
 		CREATE TABLE IF NOT EXISTS auth_sessions (
 			id TEXT PRIMARY KEY,
@@ -69,7 +73,7 @@ func (db *Database) Migrate(ctx context.Context) error {
 			expires_at TIMESTAMPTZ NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL
 		);
-		`,
+			`,
 		`
 		CREATE TABLE IF NOT EXISTS device_enrollments (
 			id TEXT PRIMARY KEY,
@@ -86,7 +90,7 @@ func (db *Database) Migrate(ctx context.Context) error {
 			created_at TIMESTAMPTZ NOT NULL,
 			registered_device_id TEXT
 		);
-		`,
+			`,
 		`
 		CREATE TABLE IF NOT EXISTS devices (
 			id TEXT PRIMARY KEY,
@@ -107,23 +111,23 @@ func (db *Database) Migrate(ctx context.Context) error {
 			created_at TIMESTAMPTZ NOT NULL,
 			updated_at TIMESTAMPTZ NOT NULL
 		);
-		`,
+			`,
 		`
 		CREATE INDEX IF NOT EXISTS idx_devices_status
 		ON devices(status);
-		`,
+			`,
 		`
 		ALTER TABLE devices
 		ADD COLUMN IF NOT EXISTS enrollment_id TEXT;
-		`,
+			`,
 		`
 		ALTER TABLE devices
 		ADD COLUMN IF NOT EXISTS device_secret_hash TEXT NOT NULL DEFAULT '';
-		`,
+			`,
 		`
 		ALTER TABLE devices
 		ADD COLUMN IF NOT EXISTS fingerprint_hash TEXT NOT NULL DEFAULT '';
-		`,
+			`,
 		`
 		CREATE TABLE IF NOT EXISTS instance_settings (
 			id BOOLEAN PRIMARY KEY DEFAULT TRUE,
@@ -133,7 +137,7 @@ func (db *Database) Migrate(ctx context.Context) error {
 			bandwidth_throttle BOOLEAN NOT NULL DEFAULT FALSE,
 			updated_at TIMESTAMPTZ NOT NULL
 		);
-		`,
+			`,
 		`
 		CREATE TABLE IF NOT EXISTS audit_logs (
 			id TEXT PRIMARY KEY,
@@ -145,7 +149,7 @@ func (db *Database) Migrate(ctx context.Context) error {
 			message TEXT NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL
 		);
-		`,
+			`,
 		`
 		CREATE TABLE IF NOT EXISTS file_upload_sessions (
 			id TEXT PRIMARY KEY,
@@ -169,7 +173,7 @@ func (db *Database) Migrate(ctx context.Context) error {
 			updated_at TIMESTAMPTZ NOT NULL,
 			completed_at TIMESTAMPTZ
 		);
-		`,
+			`,
 		`
 		CREATE TABLE IF NOT EXISTS file_upload_chunks (
 			session_id TEXT NOT NULL REFERENCES file_upload_sessions(id) ON DELETE CASCADE,
@@ -179,11 +183,11 @@ func (db *Database) Migrate(ctx context.Context) error {
 			received_at TIMESTAMPTZ NOT NULL,
 			PRIMARY KEY (session_id, chunk_index)
 		);
-		`,
+			`,
 		`
 		CREATE INDEX IF NOT EXISTS idx_file_upload_sessions_status
 		ON file_upload_sessions(status, created_at DESC);
-		`,
+			`,
 		`
 		CREATE TABLE IF NOT EXISTS replication_jobs (
 			id TEXT PRIMARY KEY,
@@ -197,27 +201,39 @@ func (db *Database) Migrate(ctx context.Context) error {
 			completed_at TIMESTAMPTZ,
 			UNIQUE (upload_session_id, device_id)
 		);
-		`,
+			`,
 		`
 		CREATE INDEX IF NOT EXISTS idx_replication_jobs_device_status
 		ON replication_jobs(device_id, status, created_at DESC);
-		`,
+			`,
 		`
 		ALTER TABLE instance_settings
 		ADD COLUMN IF NOT EXISTS p2p_strict_approval BOOLEAN NOT NULL DEFAULT FALSE;
-		`,
+			`,
 		`
 		ALTER TABLE instance_settings
 		ADD COLUMN IF NOT EXISTS metadata_mode TEXT NOT NULL DEFAULT 'always';
-		`,
+			`,
 		`
 		ALTER TABLE instance_settings
 		ADD COLUMN IF NOT EXISTS strip_images BOOLEAN NOT NULL DEFAULT TRUE;
-		`,
+			`,
 		`
 		ALTER TABLE instance_settings
 		ADD COLUMN IF NOT EXISTS strip_pdfs BOOLEAN NOT NULL DEFAULT TRUE;
-		`,
+			`,
+			`
+			CREATE TABLE IF NOT EXISTS automation_rules (
+				id SERIAL PRIMARY KEY,
+				name TEXT NOT NULL UNIQUE,
+				description TEXT NOT NULL DEFAULT '',
+				active BOOLEAN NOT NULL DEFAULT TRUE,
+				total_runs INTEGER NOT NULL DEFAULT 0,
+				last_triggered_at TEXT NOT NULL DEFAULT 'Not triggered yet',
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			);
+			`,
 	}
 
 	for _, statement := range statements {
@@ -227,6 +243,10 @@ func (db *Database) Migrate(ctx context.Context) error {
 	}
 
 	if err := db.seedInstanceSettings(ctx); err != nil {
+		return err
+	}
+
+	if err := db.seedAutomationRules(ctx); err != nil {
 		return err
 	}
 
@@ -268,7 +288,7 @@ func (db *Database) seedAdminUser(ctx context.Context) error {
 			created_at
 		)
 		VALUES ($1, $2, $3, $4, $5, $6)
-		`,
+			`,
 		uuid.NewString(),
 		"admin@horsync.local",
 		string(passwordHash),
@@ -283,6 +303,7 @@ func (db *Database) seedAdminUser(ctx context.Context) error {
 	return nil
 }
 
+// GetInstanceSettings retrieves the current instance-level configuration settings.
 func (db *Database) GetInstanceSettings(ctx context.Context) (models.InstanceSettings, error) {
 	var settings models.InstanceSettings
 	var updatedAt time.Time
@@ -302,7 +323,7 @@ func (db *Database) GetInstanceSettings(ctx context.Context) (models.InstanceSet
 			updated_at
 		FROM instance_settings
 		WHERE id = TRUE
-		`,
+			`,
 	).Scan(
 		&settings.NodeName,
 		&settings.MaintainerEmail,
@@ -322,6 +343,7 @@ func (db *Database) GetInstanceSettings(ctx context.Context) (models.InstanceSet
 	return settings, nil
 }
 
+// UpdateInstanceSettings persists the provided instance configuration and returns the updated settings.
 func (db *Database) UpdateInstanceSettings(ctx context.Context, input models.InstanceSettings) (models.InstanceSettings, error) {
 	updatedAt := time.Now().UTC()
 
@@ -340,7 +362,7 @@ func (db *Database) UpdateInstanceSettings(ctx context.Context, input models.Ins
 			strip_pdfs = $8,
 			updated_at = $9
 		WHERE id = TRUE
-		`,
+			`,
 		input.NodeName,
 		input.MaintainerEmail,
 		input.SmartDeltaSync,
@@ -377,7 +399,7 @@ func (db *Database) seedInstanceSettings(ctx context.Context) error {
 		)
 		VALUES (TRUE, $1, $2, $3, $4, $5, 'always', TRUE, TRUE, $6)
 		ON CONFLICT (id) DO NOTHING
-		`,
+			`,
 		"HORSYNC_CONTROL_PLANE",
 		"maintainer@horsync.org",
 		true,
@@ -387,6 +409,25 @@ func (db *Database) seedInstanceSettings(ctx context.Context) error {
 	)
 	if err != nil {
 		return fmt.Errorf("seed instance settings: %w", err)
+	}
+
+	return nil
+}
+
+
+func (db *Database) seedAutomationRules(ctx context.Context) error {
+	_, err := db.Pool.Exec(ctx, `
+		INSERT INTO automation_rules (name, description, active, total_runs, last_triggered_at)
+		VALUES
+			('AUTO_ENCRYPT_FINANCIALS', 'Encrypt matching PDF files when file reporting is integrated.', TRUE, 0, 'Not triggered yet'),
+			('WIPE_EXIF_METADATA', 'Strip image metadata before replication when uploads are enabled.', TRUE, 0, 'Not triggered yet'),
+			('COLD_STORAGE_ARCHIVE', 'Archive inactive files after long retention windows.', FALSE, 0, 'Not triggered yet'),
+			('INSTANT_SYNC_PRIORITY', 'Prioritize low-latency sync jobs for small files.', TRUE, 0, 'Not triggered yet'),
+			('WIPE_DOCUMENT_METADATA', 'Strip author, creation software, and XMP metadata streams from PDF and office documents before replication.', TRUE, 0, 'Not triggered yet')
+		ON CONFLICT (name) DO NOTHING
+	`)
+	if err != nil {
+		return fmt.Errorf("seed automation rules: %w", err)
 	}
 
 	return nil
@@ -404,7 +445,7 @@ func (db *Database) cleanupLegacySeedDevices(ctx context.Context) error {
 				'design@horsync.org',
 				'field@horsync.org'
 			)
-		`,
+			`,
 	)
 	if err != nil {
 		return fmt.Errorf("cleanup legacy seed devices: %w", err)

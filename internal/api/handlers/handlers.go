@@ -24,6 +24,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// Login authenticates a user and returns a session token.
 func Login(c *fiber.Ctx) error {
 	db := config.GetDatabase()
 	if db == nil {
@@ -49,30 +50,36 @@ func Login(c *fiber.Ctx) error {
 	return c.JSON(session)
 }
 
+// Me returns the currently authenticated user.
 func Me(c *fiber.Ctx) error {
 	return c.JSON(middleware.CurrentUser(c))
 }
 
+// GetStats returns the current system monitoring stats.
 func GetStats(c *fiber.Ctx) error {
 	monitor := sysmonitor.GetInstance()
 	return c.JSON(monitor.GetStats())
 }
 
+// GetPerformance returns the system performance history.
 func GetPerformance(c *fiber.Ctx) error {
 	monitor := sysmonitor.GetInstance()
 	return c.JSON(monitor.GetPerformanceHistory())
 }
 
+// GetNodes returns all nodes in the P2P topology mesh.
 func GetNodes(c *fiber.Ctx) error {
 	mesh := topology.GetInstance()
 	return c.JSON(mesh.GetNodes())
 }
 
+// GetRules returns all engine rules.
 func GetRules(c *fiber.Ctx) error {
 	eng := engine.GetInstance()
 	return c.JSON(eng.GetRules())
 }
 
+// ToggleRule enables or disables a rule by its ID.
 func ToggleRule(c *fiber.Ctx) error {
 	id, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
@@ -102,6 +109,7 @@ func ToggleRule(c *fiber.Ctx) error {
 	return c.JSON(rule)
 }
 
+// GetFiles returns the list of managed files.
 func GetFiles(c *fiber.Ctx) error {
 	db := config.GetDatabase()
 	if db != nil {
@@ -114,6 +122,7 @@ func GetFiles(c *fiber.Ctx) error {
 	return c.JSON(eng.GetFiles())
 }
 
+// GetSecurityLogs returns recent security audit logs.
 func GetSecurityLogs(c *fiber.Ctx) error {
 	db := config.GetDatabase()
 	if db != nil {
@@ -126,6 +135,7 @@ func GetSecurityLogs(c *fiber.Ctx) error {
 	return c.JSON(v.GetLogs())
 }
 
+// ListAuditLogs returns a list of audit log entries.
 func ListAuditLogs(c *fiber.Ctx) error {
 	db := config.GetDatabase()
 	if db == nil {
@@ -144,6 +154,7 @@ func ListAuditLogs(c *fiber.Ctx) error {
 	return c.JSON(logs)
 }
 
+// ListDevices returns all registered devices.
 func ListDevices(c *fiber.Ctx) error {
 	mesh := topology.GetInstance()
 	devices, err := mesh.ListDevices(c.Context())
@@ -154,6 +165,7 @@ func ListDevices(c *fiber.Ctx) error {
 	return c.JSON(devices)
 }
 
+// RegisterDevice registers a new device in the topology mesh.
 func RegisterDevice(c *fiber.Ctx) error {
 	var input models.DeviceRegistrationInput
 	if err := c.BodyParser(&input); err != nil {
@@ -187,6 +199,7 @@ func RegisterDevice(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(device)
 }
 
+// CreateUploadSession creates a new chunked upload session.
 func CreateUploadSession(c *fiber.Ctx) error {
 	db := config.GetDatabase()
 	if db == nil {
@@ -217,6 +230,7 @@ func CreateUploadSession(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(session)
 }
 
+// UploadChunk stores a single chunk for an upload session.
 func UploadChunk(c *fiber.Ctx) error {
 	db := config.GetDatabase()
 	if db == nil {
@@ -248,6 +262,7 @@ func UploadChunk(c *fiber.Ctx) error {
 	return c.JSON(result)
 }
 
+// FinalizeUpload finalizes a completed upload session and triggers replication.
 func FinalizeUpload(c *fiber.Ctx) error {
 	db := config.GetDatabase()
 	if db == nil {
@@ -280,6 +295,7 @@ func FinalizeUpload(c *fiber.Ctx) error {
 	return c.JSON(fileEntry)
 }
 
+// GetUploadSession returns the details of an upload session.
 func GetUploadSession(c *fiber.Ctx) error {
 	session, err := transfer.GetInstance().GetUploadSession(c.Context(), c.Params("id"))
 	if err != nil {
@@ -289,6 +305,7 @@ func GetUploadSession(c *fiber.Ctx) error {
 	return c.JSON(session)
 }
 
+// ListAgentJobs returns replication jobs for the authenticated device agent.
 func ListAgentJobs(c *fiber.Ctx) error {
 	db := config.GetDatabase()
 	if db == nil {
@@ -308,6 +325,7 @@ func ListAgentJobs(c *fiber.Ctx) error {
 	return c.JSON(jobs)
 }
 
+// GetAgentManifest returns the replication manifest for a specific job.
 func GetAgentManifest(c *fiber.Ctx) error {
 	device := middleware.CurrentDevice(c)
 	manifest, err := transfer.GetInstance().GetReplicationManifest(c.Context(), c.Params("id"), device.ID)
@@ -318,6 +336,7 @@ func GetAgentManifest(c *fiber.Ctx) error {
 	return c.JSON(manifest)
 }
 
+// DownloadAgentChunk streams a single replication chunk to the device agent.
 func DownloadAgentChunk(c *fiber.Ctx) error {
 	device := middleware.CurrentDevice(c)
 	chunkIndex, err := strconv.Atoi(c.Params("index"))
@@ -338,6 +357,7 @@ func DownloadAgentChunk(c *fiber.Ctx) error {
 	return c.Send(payload)
 }
 
+// CompleteAgentJob marks a replication job as completed by the device agent.
 func CompleteAgentJob(c *fiber.Ctx) error {
 	db := config.GetDatabase()
 	if db == nil {
@@ -367,6 +387,7 @@ func CompleteAgentJob(c *fiber.Ctx) error {
 	return c.JSON(job)
 }
 
+// ApproveDevice approves a pending device registration.
 func ApproveDevice(c *fiber.Ctx) error {
 	mesh := topology.GetInstance()
 	device, err := mesh.ApproveDevice(c.Context(), c.Params("id"))
@@ -377,6 +398,7 @@ func ApproveDevice(c *fiber.Ctx) error {
 	return c.JSON(device)
 }
 
+// RejectDevice rejects a pending device registration.
 func RejectDevice(c *fiber.Ctx) error {
 	mesh := topology.GetInstance()
 	device, err := mesh.RejectDevice(c.Context(), c.Params("id"))
@@ -387,6 +409,7 @@ func RejectDevice(c *fiber.Ctx) error {
 	return c.JSON(device)
 }
 
+// ListDeviceEnrollments returns all device enrollment tokens.
 func ListDeviceEnrollments(c *fiber.Ctx) error {
 	db := config.GetDatabase()
 	if db == nil {
@@ -405,6 +428,7 @@ func ListDeviceEnrollments(c *fiber.Ctx) error {
 	return c.JSON(enrollments)
 }
 
+// CreateDeviceEnrollment creates a new device enrollment token.
 func CreateDeviceEnrollment(c *fiber.Ctx) error {
 	db := config.GetDatabase()
 	if db == nil {
@@ -431,6 +455,7 @@ func CreateDeviceEnrollment(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(enrollment)
 }
 
+// GetInstanceSettings returns the current instance configuration.
 func GetInstanceSettings(c *fiber.Ctx) error {
 	db := config.GetDatabase()
 	if db == nil {
@@ -449,6 +474,7 @@ func GetInstanceSettings(c *fiber.Ctx) error {
 	return c.JSON(settings)
 }
 
+// UpdateInstanceSettings updates the instance configuration.
 func UpdateInstanceSettings(c *fiber.Ctx) error {
 	db := config.GetDatabase()
 	if db == nil {
@@ -477,6 +503,7 @@ func UpdateInstanceSettings(c *fiber.Ctx) error {
 	return c.JSON(settings)
 }
 
+// handleControlPlaneError maps control-plane errors to HTTP responses.
 func handleControlPlaneError(c *fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, fiber.ErrBadRequest):
@@ -492,6 +519,7 @@ func handleControlPlaneError(c *fiber.Ctx, err error) error {
 	}
 }
 
+// handleUploadError maps upload-related errors to HTTP responses.
 func handleUploadError(c *fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, transfer.ErrInvalidUploadSession):
@@ -521,6 +549,7 @@ func handleUploadError(c *fiber.Ctx, err error) error {
 	}
 }
 
+// GetP2PPeers returns the active and discovered P2P peers.
 func GetP2PPeers(c *fiber.Ctx) error {
 	engine := p2p.GetInstance()
 	return c.JSON(fiber.Map{
@@ -529,6 +558,7 @@ func GetP2PPeers(c *fiber.Ctx) error {
 	})
 }
 
+// DownloadHorsyncExecutable serves the Horsync agent executable for download.
 func DownloadHorsyncExecutable(c *fiber.Ctx) error {
 	path := "bin/horsync.exe"
 	if _, err := os.Stat(path); err != nil {
@@ -551,6 +581,7 @@ func DownloadHorsyncExecutable(c *fiber.Ctx) error {
 	return c.SendFile(path)
 }
 
+// WipeFileMetadata removes EXIF or document metadata from a completed upload.
 func WipeFileMetadata(c *fiber.Ctx) error {
 	db := config.GetDatabase()
 	if db == nil {

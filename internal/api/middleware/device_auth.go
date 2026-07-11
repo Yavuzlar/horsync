@@ -11,6 +11,7 @@ import (
 
 const deviceContextKey = "auth_device"
 
+// RequireDeviceAgent validates device credentials and sets the authenticated device in context.
 func RequireDeviceAgent(c *fiber.Ctx) error {
 	db := config.GetDatabase()
 	if db == nil {
@@ -40,6 +41,7 @@ func RequireDeviceAgent(c *fiber.Ctx) error {
 	return c.Next()
 }
 
+// CurrentDevice retrieves the authenticated device from the request context.
 func CurrentDevice(c *fiber.Ctx) models.Node {
 	if value := c.Locals(deviceContextKey); value != nil {
 		if device, ok := value.(models.Node); ok {

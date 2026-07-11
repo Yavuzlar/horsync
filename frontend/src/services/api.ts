@@ -225,4 +225,20 @@ export const api = {
       method: 'POST',
     });
   },
+
+  vaultStatus(): Promise<{ isUnlocked: boolean; keyFingerprint: string }> {
+    return request<{ isUnlocked: boolean; keyFingerprint: string }>('/api/vault/status');
+  },
+
+  vaultUnlock(passphrase: string): Promise<{ isUnlocked: boolean; keyFingerprint: string }> {
+    return request<{ isUnlocked: boolean; keyFingerprint: string }>('/api/vault/unlock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passphrase }),
+    });
+  },
+
+  vaultLock(): Promise<{ isUnlocked: boolean }> {
+    return request<{ isUnlocked: boolean }>('/api/vault/lock', { method: 'POST' });
+  },
 };

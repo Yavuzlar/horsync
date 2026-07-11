@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"horsync/internal/models"
+	"horsync/pkg/utils"
 
 	"github.com/google/uuid"
 )
@@ -15,6 +16,7 @@ import (
 var ErrReplicationJobNotFound = errors.New("replication job not found")
 var ErrDeviceAgentUnauthorized = errors.New("device agent unauthorized")
 
+// ValidateDeviceAgent authenticates a device agent by its device ID and secret, returning the device node on success.
 func (db *Database) ValidateDeviceAgent(ctx context.Context, auth models.DeviceAgentAuth) (models.Node, error) {
 	var (
 		device          models.Node
@@ -50,7 +52,7 @@ func (db *Database) ValidateDeviceAgent(ctx context.Context, auth models.DeviceA
 			AND status = 'active'
 		`,
 		strings.TrimSpace(auth.DeviceID),
-		hashToken(strings.TrimSpace(auth.DeviceSecret)),
+		utils.HashSHA256(strings.TrimSpace(auth.DeviceSecret)),
 	).Scan(
 		&device.ID,
 		&device.Name,
@@ -72,16 +74,17 @@ func (db *Database) ValidateDeviceAgent(ctx context.Context, auth models.DeviceA
 	}
 
 	device.Load = fmt.Sprintf("%d%%", loadPercent)
-	device.Uptime = replicationFormatUptime(uptimeSeconds)
-	device.LastSeen = replicationFormatLastSeen(lastSeenAt)
+	device.Uptime = utils.FormatUptime(uptimeSeconds)
+	device.LastSeen = utils.FormatLastSeen(lastSeenAt, "Awaiting approval")
 	device.CreatedAt = createdAt.UTC().Format(time.RFC3339)
 	if approvedAt != nil {
 		device.ApprovedAt = approvedAt.UTC().Format(time.RFC3339)
 	}
-	device.FingerprintPreview = replicationPreviewFingerprint(fingerprintHash)
+	device.FingerprintPreview = utils.PreviewFingerprint(fingerprintHash)
 	return device, nil
 }
 
+// CreateReplicationJobs creates a queued replication job for every active device except the source device.
 func (db *Database) CreateReplicationJobs(ctx context.Context, uploadSessionID string, sourceDeviceID string) ([]models.ReplicationJob, error) {
 	rows, err := db.Pool.Query(
 		ctx,
@@ -148,6 +151,7 @@ func (db *Database) CreateReplicationJobs(ctx context.Context, uploadSessionID s
 	return result, rows.Err()
 }
 
+// ListReplicationJobsForDevice returns all pending (queued or verifying) replication jobs for the given device.
 func (db *Database) ListReplicationJobsForDevice(ctx context.Context, deviceID string) ([]models.ReplicationJob, error) {
 	rows, err := db.Pool.Query(
 		ctx,
@@ -177,6 +181,7 @@ func (db *Database) ListReplicationJobsForDevice(ctx context.Context, deviceID s
 	return result, rows.Err()
 }
 
+// GetReplicationManifest retrieves the file metadata and chunk list for a replication job, transitioning its status to verifying.
 func (db *Database) GetReplicationManifest(ctx context.Context, jobID string, deviceID string) (models.ReplicationManifest, error) {
 	var manifest models.ReplicationManifest
 
@@ -261,6 +266,7 @@ func (db *Database) GetReplicationManifest(ctx context.Context, jobID string, de
 	return manifest, nil
 }
 
+// UpdateReplicationJob updates the status, verified SHA256, and error field of a replication job.
 func (db *Database) UpdateReplicationJob(ctx context.Context, jobID string, deviceID string, input models.ReplicationAckInput) (models.ReplicationJob, error) {
 	status := strings.TrimSpace(strings.ToLower(input.Status))
 	if status == "" {
@@ -297,6 +303,7 @@ func (db *Database) UpdateReplicationJob(ctx context.Context, jobID string, devi
 	return db.GetReplicationJob(ctx, jobID, deviceID)
 }
 
+// GetReplicationJob fetches a single replication job by its ID and device ID.
 func (db *Database) GetReplicationJob(ctx context.Context, jobID string, deviceID string) (models.ReplicationJob, error) {
 	rows, err := db.Pool.Query(
 		ctx,
@@ -353,43 +360,3 @@ func scanReplicationJob(scanner interface {
 
 	return item, nil
 }
-
-func replicationFormatUptime(totalSeconds int64) string {
-	if totalSeconds <= 0 {
-		return "0D 00H"
-	}
-
-	duration := time.Duration(totalSeconds) * time.Second
-	days := duration / (24 * time.Hour)
-	duration -= days * 24 * time.Hour
-	hours := duration / time.Hour
-
-	return fmt.Sprintf("%dD %02dH", days, hours)
-}
-
-func replicationFormatLastSeen(value *time.Time) string {
-	if value == nil {
-		return "Awaiting approval"
-	}
-
-	elapsed := time.Since(value.UTC())
-	switch {
-	case elapsed < time.Minute:
-		return "Just now"
-	case elapsed < time.Hour:
-		return fmt.Sprintf("%dm ago", int(elapsed.Minutes()))
-	case elapsed < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(elapsed.Hours()))
-	default:
-		return fmt.Sprintf("%dd ago", int(elapsed.Hours()/24))
-	}
-}
-
-func replicationPreviewFingerprint(value string) string {
-	if len(value) <= 12 {
-		return value
-	}
-
-	return value[:12]
-}
-

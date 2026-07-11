@@ -267,7 +267,7 @@ export function FileExplorer() {
         const totalChunks = Math.ceil(file.size / chunkSize);
         
         // Preserve folder structure if webkitRelativePath is available
-        const fileNameToUpload = file.webkitRelativePath || file.name;
+        const fileNameToUpload = (file as any).webkitRelativePath || file.name;
 
         const session = await api.createUploadSession({
           fileName: fileNameToUpload,
@@ -344,9 +344,14 @@ export function FileExplorer() {
   return (
     <div className="flex-1 flex flex-col h-full bg-[#05080f] p-8 overflow-y-auto">
       <div className="flex items-center justify-between mb-12 border-b border-white/5 pb-6">
-        <div className="flex flex-col">
-          <h2 className="text-2xl font-bold text-white tracking-tight font-mono uppercase">{t('files.title')}</h2>
-          <p className="text-xs text-gray-500 font-mono uppercase tracking-widest mt-1">{t('files.subtitle')}</p>
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 rounded-xl border border-blue-500/20 bg-[#0a0f1a] flex items-center justify-center shadow-[0_0_20px_rgba(59,130,246,0.1)] overflow-hidden shrink-0">
+            <img src="/logo.svg" alt="Horsync Logo" className="w-8 h-8 object-contain" />
+          </div>
+          <div className="flex flex-col">
+            <h2 className="text-2xl font-bold text-white tracking-tight font-mono uppercase">{t('files.title')}</h2>
+            <p className="text-xs text-gray-500 font-mono uppercase tracking-widest mt-1">{t('files.subtitle')}</p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -438,12 +443,12 @@ export function FileExplorer() {
                         webkitdirectory: "",
                         directory: ""
                       } as any)}
-                      onChange={(event) => {
+                      onChange={(event: any) => {
                         const filesList = event.target.files;
                         if (filesList && filesList.length > 0) {
                           const filesArr = Array.from(filesList);
                           setSelectedFiles(filesArr);
-                          const firstPath = filesArr[0].webkitRelativePath || '';
+                          const firstPath = (filesArr[0] as any).webkitRelativePath || '';
                           const folderName = firstPath.split('/')[0] || 'Imported Folder';
                           setUploadingFolder(folderName);
                           setShowFolderApproval(true);

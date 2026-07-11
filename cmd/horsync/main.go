@@ -11,7 +11,6 @@ import (
 	"io"
 	"log"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -47,7 +46,6 @@ type agentConfig struct {
 func main() {
 	// Parse CLI options
 	isAgent := flag.Bool("agent", false, "Run in background sync Agent mode")
-	isServer := flag.Bool("server", false, "Run in central Hub Server mode (default)")
 	install := flag.Bool("install", false, "Automatically detect host OS and configure as background autostart service")
 	uninstall := flag.Bool("uninstall", false, "Remove background autostart service registration")
 
@@ -75,8 +73,7 @@ func main() {
 	if *isAgent {
 		runAgent(*deviceID, *deviceSecret, *baseURL, *storageDir, *pollSeconds)
 	} else {
-		// By default or when --server is true, run in server mode
-		_ = *isServer
+		// Default mode: run as central Hub server
 		runServer()
 	}
 }
@@ -136,14 +133,6 @@ func runServer() {
 	app.Use(cors.New())
 
 	routes.Register(app)
-
-	app.Get("/api/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{
-			"status":   "ok",
-			"version":  "1.2.4-beta",
-			"local_ip": getLocalIP(),
-		})
-	})
 
 	distDir := filepath.Join("frontend", "dist")
 	if _, err := os.Stat(filepath.Join(distDir, "index.html")); err == nil {
@@ -551,32 +540,3 @@ func uninstallService() {
 	}
 }
 
-func getLocalIP() string {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return "127.0.0.1"
-	}
-	for _, address := range addrs {
-		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				ipStr := ipnet.IP.String()
-				// Exclude standard virtual network interface adapters and APIPA link-local addresses
-				if !strings.HasPrefix(ipStr, "192.168.217.") && !strings.HasPrefix(ipStr, "192.168.111.") && !strings.HasPrefix(ipStr, "172.") && !strings.HasPrefix(ipStr, "169.254.") {
-					return ipStr
-				}
-			}
-		}
-	}
-	// Fallback to first non-loopback, non-APIPA IPv4 address
-	for _, address := range addrs {
-		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				ipStr := ipnet.IP.String()
-				if !strings.HasPrefix(ipStr, "169.254.") {
-					return ipStr
-				}
-			}
-		}
-	}
-	return "127.0.0.1"
-}

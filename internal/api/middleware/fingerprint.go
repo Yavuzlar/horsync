@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// BuildDeviceFingerprint generates a device fingerprint hash from request metadata and optional segments.
 func BuildDeviceFingerprint(c *fiber.Ctx, segments ...string) string {
 	parts := []string{
 		strings.TrimSpace(c.IP()),

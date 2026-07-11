@@ -11,6 +11,15 @@ logs/*.log
 .DS_Store
 Thumbs.db
 
+# Runtime data
+data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
 # Go
 vendor/
 go.work

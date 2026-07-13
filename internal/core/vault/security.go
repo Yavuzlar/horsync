@@ -20,40 +20,117 @@ import (
 
 // Vault provides client-side zero-knowledge encryption using AES-GCM 256-bit.
 // Keys are derived from a passphrase using PBKDF2 and never stored in plaintext.
+// The PBKDF2 salt is persisted to disk so encrypted files remain decryptable
+// across server restarts and process respawns.
 type Vault struct {
 	mu         sync.RWMutex
 	logs       []models.SecurityLog
 	masterKey  []byte // Derived key, kept only in memory
 	isUnlocked bool
 	salt       []byte
+	saltPath   string
 }
 
 var instance *Vault
 var once sync.Once
 
+// saltFilePath is the persistent location of the PBKDF2 salt. The salt itself
+// is not secret — it only needs to be stable across server restarts.
+const saltFilePath = "data/vault.salt"
+
 // GetInstance returns the singleton vault instance.
 func GetInstance() *Vault {
 	once.Do(func() {
 		instance = &Vault{
-			logs: make([]models.SecurityLog, 0),
-			salt: make([]byte, 32),
+			logs:     make([]models.SecurityLog, 0),
+			salt:     make([]byte, 32),
+			saltPath: saltFilePath,
 		}
-		// Generate a random salt on initialization
+		// Generate a random ephemeral salt as a fallback. Start() will replace
+		// this with the persisted (or newly persisted) salt before use.
 		if _, err := rand.Read(instance.salt); err != nil {
-			// Fallback salt if random fails (not cryptographically ideal but prevents nil panic)
 			copy(instance.salt, []byte("HORSYNC_VAULT_SALT_2024_DEFAULT"))
 		}
 	})
 	return instance
 }
 
-// Start initializes the vault and logs a startup event.
+// Start initializes the vault, ensures a persistent PBKDF2 salt is loaded from
+// disk (creating one on first boot), and logs a startup event.
 func (v *Vault) Start() {
+	v.loadOrCreateSalt()
+
 	v.log(models.SecurityLog{
 		Event:  "vault.initialized",
 		Type:   "info",
 		Time:   time.Now().UTC().Format(time.RFC3339),
 		Detail: "Zero-knowledge vault engine started. No keys loaded.",
+	})
+}
+
+// loadOrCreateSalt ensures a stable, persisted salt is available. If a salt
+// file exists, it is loaded. Otherwise a new random salt is generated and
+// written to disk so subsequent process starts derive the same PBKDF2 key
+// from the same passphrase.
+func (v *Vault) loadOrCreateSalt() {
+	if v.saltPath == "" {
+		return
+	}
+
+	// Ensure the parent directory exists so the salt file can be written.
+	if err := os.MkdirAll(filepath.Dir(v.saltPath), 0o700); err != nil {
+		v.log(models.SecurityLog{
+			Event:  "vault.salt.persist_failed",
+			Type:   "warning",
+			Time:   time.Now().UTC().Format(time.RFC3339),
+			Detail: "Could not create vault salt directory; using in-memory salt: " + err.Error(),
+		})
+		return
+	}
+
+	// Attempt to load an existing salt.
+	if data, err := os.ReadFile(v.saltPath); err == nil && len(data) >= 16 {
+		v.salt = data
+		v.log(models.SecurityLog{
+			Event:  "vault.salt.loaded",
+			Type:   "info",
+			Time:   time.Now().UTC().Format(time.RFC3339),
+			Detail: "Persistent PBKDF2 salt loaded from disk.",
+		})
+		return
+	}
+
+	// Otherwise generate and persist a fresh salt.
+	fresh := make([]byte, 32)
+	if _, err := rand.Read(fresh); err != nil {
+		// Cryptographic random unavailable; reuse the ephemeral fallback salt
+		// but do not persist it, otherwise we'd persist a known weak value.
+		v.log(models.SecurityLog{
+			Event:  "vault.salt.ephemeral",
+			Type:   "warning",
+			Time:   time.Now().UTC().Format(time.RFC3339),
+			Detail: "Could not generate cryptographically random salt; using ephemeral in-memory salt. Encryption is untrusted across restarts.",
+		})
+		return
+	}
+
+	if err := os.WriteFile(v.saltPath, fresh, 0o600); err != nil {
+		v.log(models.SecurityLog{
+			Event:  "vault.salt.persist_failed",
+			Type:   "warning",
+			Time:   time.Now().UTC().Format(time.RFC3339),
+			Detail: "Could not persist vault salt to disk; using in-memory salt: " + err.Error(),
+		})
+		v.salt = fresh
+		return
+	}
+
+	v.salt = fresh
+	v.log(models.SecurityLog{
+		Event:  "vault.salt.persisted",
+		Type:   "info",
+		Time:   time.Now().UTC().Format(time.RFC3339),
+		Detail: "New PBKDF2 salt generated and persisted to disk.",
 	})
 }
 

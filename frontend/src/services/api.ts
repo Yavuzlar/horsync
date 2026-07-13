@@ -241,4 +241,20 @@ export const api = {
   vaultLock(): Promise<{ isUnlocked: boolean }> {
     return request<{ isUnlocked: boolean }>('/api/vault/lock', { method: 'POST' });
   },
+
+  vaultEncrypt(path: string): Promise<{ status: string; outputPath: string }> {
+    return request<{ status: string; outputPath: string }>('/api/vault/encrypt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+  },
+
+  vaultDecrypt(path: string): Promise<{ status: string; outputPath: string }> {
+    return request<{ status: string; outputPath: string }>('/api/vault/decrypt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+  },
 };

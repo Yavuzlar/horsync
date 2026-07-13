@@ -338,6 +338,8 @@ func (db *Database) ListFiles(ctx context.Context) ([]models.File, error) {
 			statuses = append(statuses, "SHA256_VERIFIED")
 		} else if integrityStatus == "mismatch" {
 			statuses = append(statuses, "SHA256_MISMATCH")
+		} else if integrityStatus == "skipped" {
+			statuses = append(statuses, "INTEGRITY_SKIPPED")
 		}
 
 		// Dynamically check for sensitive metadata

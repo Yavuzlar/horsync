@@ -1,4 +1,4 @@
-import { FolderOpen, Zap, Shield, Settings, Code2, LayoutDashboard, LogOut, Network } from 'lucide-react';
+import { FolderOpen, Shield, Settings, Code2, LayoutDashboard, LogOut, Network, Cpu } from 'lucide-react';
 import { cn } from '../lib/utils';
 import type { User } from '../lib/types';
 import { useLanguage } from '../lib/i18n';
@@ -16,6 +16,7 @@ export function Sidebar({ activeTab, setActiveTab, user, onLogout }: SidebarProp
     { id: 'hub', icon: LayoutDashboard, label: t('nav.hub') },
     { id: 'explorer', icon: FolderOpen, label: t('nav.explorer') },
     { id: 'nodes', icon: Network, label: t('nav.nodes') },
+    { id: 'automation', icon: Cpu, label: t('nav.automation') },
     { id: 'security', icon: Shield, label: t('nav.security') },
     { id: 'settings', icon: Settings, label: t('nav.settings') },
   ];
@@ -25,7 +26,7 @@ export function Sidebar({ activeTab, setActiveTab, user, onLogout }: SidebarProp
       <div className="flex items-center gap-3 mb-12 px-2">
         <div className="relative flex items-center justify-center w-12 h-12 rounded-xl bg-white/5 border border-white/10 shadow-[0_0_20px_rgba(255,255,255,0.05)] shrink-0 overflow-hidden animate-logo-fly">
           <img
-            src="/logo.svg"
+            src="/logo.png"
             alt="Horsync Logo"
             className="w-10 h-10 object-contain"
             referrerPolicy="no-referrer"

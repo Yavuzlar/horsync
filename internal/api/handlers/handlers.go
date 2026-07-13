@@ -607,8 +607,12 @@ func WipeFileMetadata(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "file session not found"})
 	}
 
-	// Calculate absolute part file path on disk
-	filePath := filepath.Join("data/uploads", sessionID, strings.TrimSuffix(fileName, filepath.Ext(fileName))+".part")
+	// Resolve the on-disk path through the transfer manager so the configured
+	// upload storage directory is honoured rather than a hard-coded "data/uploads".
+	filePath, err := transfer.GetInstance().ResolveUploadFile(c.Context(), sessionID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "file session not found"})
+	}
 	if _, err := os.Stat(filePath); err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "file not found on disk"})
 	}

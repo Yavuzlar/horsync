@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"horsync/internal/config"
+	"horsync/internal/core/transfer"
 )
 
 // Default P2P ports
@@ -83,12 +84,21 @@ func GetInstance() *P2PEngine {
 	return instance
 }
 
-// Start initializes the P2P engine with device credentials and begins discovery and TCP listeners.
-func (p *P2PEngine) Start(deviceID, deviceName, deviceSecret string) error {
+// Start initializes the P2P engine with device credentials and begins
+// discovery and TCP listeners. Pass tcpPort or udpPort == 0 to use the
+// engine defaults (22000 / 21027). Non-zero values let multiple agent
+// processes coexist on the same host (useful for single-machine tests).
+func (p *P2PEngine) Start(deviceID, deviceName, deviceSecret string, tcpPort int, udpPort int) error {
 	p.mu.Lock()
 	p.deviceID = deviceID
 	p.deviceName = deviceName
 	p.deviceSecret = deviceSecret
+	if tcpPort > 0 {
+		p.port = tcpPort
+	}
+	if udpPort > 0 {
+		p.discoveryPort = udpPort
+	}
 	// Initialize TLS with auto-generated self-signed certificate
 	if err := p.initTLS(); err != nil {
 		log.Printf("[P2P] WARNING: TLS initialization failed, falling back to plain TCP: %v", err)
@@ -96,12 +106,29 @@ func (p *P2PEngine) Start(deviceID, deviceName, deviceSecret string) error {
 	}
 	p.mu.Unlock()
 
-	go p.runDiscoveryListener()
-	go p.runDiscoveryAdvertiser()
+	// Discovery listener and advertiser share the UDP port; on single-host
+	// multi-agent setups the second process will fail to bind, which is
+	// non-fatal — that process will still dial peers discovered by others.
 	go p.runTCPListener()
+	go p.runDiscoveryAdvertiser()
+	go p.runDiscoveryListener()
 
 	log.Printf("[P2P] Engine initialized for node %s (%s) - TCP:%d UDP:%d", deviceName, deviceID, p.port, p.discoveryPort)
 	return nil
+}
+
+// IsPeerConnected reports whether a peer with the given device ID is
+// currently linked to this P2P engine. Used by the agent replication path
+// to decide whether a chunk can be fetched directly from the source peer
+// instead of going through the Hub.
+func (p *P2PEngine) IsPeerConnected(peerID string) bool {
+	if peerID == "" {
+		return false
+	}
+	p.mu.RLock()
+	_, ok := p.peers[peerID]
+	p.mu.RUnlock()
+	return ok
 }
 
 // Stop shuts down the P2P engine, cancels all goroutines, and closes all peer connections.
@@ -436,34 +463,46 @@ func (p *P2PEngine) listenToPeer(pc *PeerConn) {
 
 // 3. Block Exchange Protocol - Real Chunk Reader
 // Reads the actual file chunk from disk for P2P transfer.
+// The on-disk path is resolved from the database via the transfer service so
+// that it matches the path used at upload time (data/uploads/{sessionId}/{fileName}.part),
+// rather than the legacy wrong "{sessionId}.part" layout.
 func (p *P2PEngine) handleChunkRequest(pc *PeerConn, msg P2PMessage) {
-	chunkPath := filepath.Join("data", "uploads", msg.SessionID, fmt.Sprintf("%s.part", msg.SessionID))
+	chunkPath, pathErr := transfer.GetInstance().ResolveUploadFile(context.Background(), msg.SessionID)
+	if pathErr != nil {
+		log.Printf("[P2P] Failed to resolve upload path for session %s: %v", msg.SessionID, pathErr)
+		chunkPath = ""
+	}
+
 	log.Printf("[P2P] Serving chunk request: session=%s index=%d path=%s", msg.SessionID, msg.ChunkIndex, chunkPath)
 
 	var payload []byte
 
 	// Try to read the chunk from the actual file on disk
-	file, err := os.Open(chunkPath)
-	if err == nil {
-		defer file.Close()
-
-		chunkSize := int(msg.PayloadSize)
-		if chunkSize <= 0 {
-			chunkSize = 2 * 1024 * 1024 // Default 2MB
-		}
-		payload = make([]byte, chunkSize)
-		offset := int64(msg.ChunkIndex) * int64(chunkSize)
-		n, err := file.ReadAt(payload, offset)
-		if err != nil && err != io.EOF {
-			log.Printf("[P2P] Error reading chunk %d: %v", msg.ChunkIndex, err)
-			payload = nil
-		} else {
-			payload = payload[:n]
-		}
-	} else {
-		log.Printf("[P2P] Chunk file not found at %s, returning empty payload: %v", chunkPath, err)
-		// Return empty payload for non-existent files to allow connection verification
+	if chunkPath == "" {
 		payload = make([]byte, 0)
+	} else {
+		file, err := os.Open(chunkPath)
+		if err == nil {
+			defer file.Close()
+
+			chunkSize := int(msg.PayloadSize)
+			if chunkSize <= 0 {
+				chunkSize = 2 * 1024 * 1024 // Default 2MB
+			}
+			payload = make([]byte, chunkSize)
+			offset := int64(msg.ChunkIndex) * int64(chunkSize)
+			n, err := file.ReadAt(payload, offset)
+			if err != nil && err != io.EOF {
+				log.Printf("[P2P] Error reading chunk %d: %v", msg.ChunkIndex, err)
+				payload = nil
+			} else {
+				payload = payload[:n]
+			}
+		} else {
+			log.Printf("[P2P] Chunk file not found at %s, returning empty payload: %v", chunkPath, err)
+			// Return empty payload for non-existent files to allow connection verification
+			payload = make([]byte, 0)
+		}
 	}
 
 	pc.mu.Lock()

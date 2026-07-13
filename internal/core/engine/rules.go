@@ -13,10 +13,16 @@ import (
 // Engine manages automation rules and file tracking.
 // Rules are persisted in the PostgreSQL database and cached in-memory.
 type Engine struct {
-	mu    sync.RWMutex
-	rules []models.Rule
-	files []models.File
+	mu         sync.RWMutex
+	rules      []models.Rule
+	files      []models.File
+	lastReload time.Time
 }
+
+// rulesReloadTTL bounds how often GetRules will reload the rule cache from
+// the database. Prevents a fire-and-forget goroutine on every read request
+// from hammering the database on hot endpoints.
+const rulesReloadTTL = 5 * time.Second
 
 var instance *Engine
 var once sync.Once
@@ -36,6 +42,9 @@ func (e *Engine) Start() {
 	if err := e.reloadRules(); err != nil {
 		fmt.Printf("[ENGINE] Failed to load rules from DB: %v\n", err)
 	}
+	e.mu.Lock()
+	e.lastReload = time.Now()
+	e.mu.Unlock()
 }
 
 // Stop is a no-op for the engine singleton.
@@ -100,24 +109,45 @@ func defaultRules() []models.Rule {
 	}
 }
 
-// GetRules returns a copy of all automation rules, reloading from the database in the background.
+// GetRules returns a copy of all automation rules. The in-memory cache is
+// refreshed from the database at most once per rulesReloadTTL, so a high
+// request rate on /api/rules will not spawn an unbounded number of
+// background reload goroutines or hammer PostgreSQL.
 func (e *Engine) GetRules() []models.Rule {
+	e.maybeReloadRules()
+
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-
-	// Try to reload from DB on each read for fresh data
-	if db := config.GetDatabase(); db != nil && db.Pool != nil {
-		// Fire and forget reload in background
-		go func() {
-			if err := e.reloadRules(); err != nil {
-				fmt.Printf("[ENGINE] Background rule reload failed: %v\n", err)
-			}
-		}()
-	}
 
 	result := make([]models.Rule, len(e.rules))
 	copy(result, e.rules)
 	return result
+}
+
+// maybeReloadRules performs a TTL-bounded synchronous reload of the rule
+// cache. Concurrent callers may race past the freshness check; reloadRules
+// is idempotent under the writer mutex, so the worst case is a couple of
+// redundant queries rather than a per-request background goroutine.
+func (e *Engine) maybeReloadRules() {
+	e.mu.RLock()
+	stale := time.Since(e.lastReload) >= rulesReloadTTL
+	e.mu.RUnlock()
+	if !stale {
+		return
+	}
+
+	if db := config.GetDatabase(); db == nil || db.Pool == nil {
+		return
+	}
+
+	if err := e.reloadRules(); err != nil {
+		fmt.Printf("[ENGINE] rule reload failed: %v\n", err)
+		return
+	}
+
+	e.mu.Lock()
+	e.lastReload = time.Now()
+	e.mu.Unlock()
 }
 
 // GetFiles returns a copy of all tracked files.

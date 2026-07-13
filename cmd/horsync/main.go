@@ -54,12 +54,14 @@ func main() {
 	baseURL := flag.String("base-url", "http://localhost:3001", "Central control plane URL")
 	storageDir := flag.String("storage-dir", "data/replicated", "Replicated storage directory")
 	pollSeconds := flag.Int("poll-seconds", 10, "Agent central polling interval in seconds")
+	p2pTCPPort := flag.Int("p2p-tcp-port", p2p.DefaultTCPPort, "P2P mesh TCP listen port (use a unique port per agent on the same host)")
+	p2pUDPPort := flag.Int("p2p-udp-port", p2p.DefaultUDPPort, "P2P mesh UDP discovery port (use a unique port per agent on the same host)")
 
 	flag.Parse()
 
 	// 1. Process Service Installation
 	if *install {
-		installService(*deviceID, *deviceSecret, *baseURL, *storageDir, *pollSeconds)
+		installService(*deviceID, *deviceSecret, *baseURL, *storageDir, *pollSeconds, *p2pTCPPort, *p2pUDPPort)
 		return
 	}
 
@@ -71,7 +73,7 @@ func main() {
 
 	// 3. Run corresponding mode
 	if *isAgent {
-		runAgent(*deviceID, *deviceSecret, *baseURL, *storageDir, *pollSeconds)
+		runAgent(*deviceID, *deviceSecret, *baseURL, *storageDir, *pollSeconds, *p2pTCPPort, *p2pUDPPort)
 	} else {
 		// Default mode: run as central Hub server
 		runServer()
@@ -116,7 +118,7 @@ func runServer() {
 	engine.GetInstance().Start()
 	topology.GetInstance().Start()
 	vault.GetInstance().Start()
-	_ = p2p.GetInstance().Start("YVS-HUB-CORE-PLANE", "Horsync Central Hub", "central-hub-secret")
+	_ = p2p.GetInstance().Start("YVS-HUB-CORE-PLANE", "Horsync Central Hub", "central-hub-secret", p2p.DefaultTCPPort, p2p.DefaultUDPPort)
 	if err := transfer.GetInstance().Start(); err != nil {
 		logger.L.Error("Upload storage failed to initialize.", "error", err)
 	}
@@ -142,7 +144,7 @@ func runServer() {
 		}))
 
 		app.Get("*", func(c *fiber.Ctx) error {
-			if len(c.Path()) >= 4 && c.Path()[:4] == "/api" {
+			if strings.HasPrefix(c.Path(), "/api") {
 				return c.SendStatus(fiber.StatusNotFound)
 			}
 
@@ -162,13 +164,21 @@ func runServer() {
 // ==========================================
 // P2P Replication Agent Mode Execution
 // ==========================================
-func runAgent(deviceID, deviceSecret, baseURL, storageDir string, pollSeconds int) {
+func runAgent(deviceID, deviceSecret, baseURL, storageDir string, pollSeconds, tcpPort, udpPort int) {
 	if deviceID == "" || deviceSecret == "" {
 		log.Fatal("[HORSYNC-AGENT] Device credentials (--device-id, --device-secret) are required")
 	}
 
 	if err := os.MkdirAll(storageDir, 0o755); err != nil {
 		log.Fatalf("[HORSYNC-AGENT] Prepare storage dir: %v", err)
+	}
+
+	// Bring up the P2P mesh engine so this agent advertises itself on the
+	// LAN and can both serve and pull chunks directly from other peers.
+	// Each agent on the same host MUST use unique TCP/UDP ports, otherwise
+	// the second process fails to bind (logged as non-fatal).
+	if err := p2p.GetInstance().Start(deviceID, deviceID, deviceSecret, tcpPort, udpPort); err != nil {
+		log.Printf("[HORSYNC-AGENT] P2P engine failed to start (continue with Hub-only replication): %v", err)
 	}
 
 	cfg := agentConfig{
@@ -180,7 +190,7 @@ func runAgent(deviceID, deviceSecret, baseURL, storageDir string, pollSeconds in
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	log.Printf("[HORSYNC-AGENT] Node Agent started successfully for Device: %s", cfg.deviceID)
+	log.Printf("[HORSYNC-AGENT] Node Agent started successfully for Device: %s (P2P TCP:%d UDP:%d)", cfg.deviceID, tcpPort, udpPort)
 
 	for {
 		if err := pollOnce(context.Background(), client, cfg); err != nil {
@@ -234,17 +244,21 @@ func processJob(ctx context.Context, client *http.Client, cfg agentConfig, job m
 	}
 
 	for _, chunk := range manifest.Chunks {
-		payload, headerHash, err := downloadChunk(ctx, client, cfg, job.ID, chunk.ChunkIndex)
+		payload, source, err := downloadChunkP2PThenHub(ctx, client, cfg, manifest, chunk.ChunkIndex)
 		if err != nil {
 			return ackFailure(ctx, client, cfg, job.ID, err)
 		}
 
 		actualHash := hashBytes(payload)
-		if headerHash != "" && headerHash != actualHash {
-			return ackFailure(ctx, client, cfg, job.ID, fmt.Errorf("chunk %d header sha mismatch", chunk.ChunkIndex))
-		}
+		// P2P responses do not carry HTTP headers, so we only enforce the
+		// manifest hash for the direct chunk path. Hub responses additionally
+		// cross-check the X-Chunk-SHA256 header (already hashed by caller).
 		if chunk.ChunkSHA256 != "" && chunk.ChunkSHA256 != actualHash {
-			return ackFailure(ctx, client, cfg, job.ID, fmt.Errorf("chunk %d manifest sha mismatch", chunk.ChunkIndex))
+			return ackFailure(ctx, client, cfg, job.ID, fmt.Errorf("chunk %d manifest sha mismatch (source=%s)", chunk.ChunkIndex, source))
+		}
+
+		if source == "p2p" {
+			log.Printf("[HORSYNC-AGENT] Chunk %d fetched via P2P from peer %s", chunk.ChunkIndex, manifest.SourceDeviceID)
 		}
 
 		offset := int64(chunk.ChunkIndex) * int64(manifest.ChunkSize)
@@ -269,7 +283,40 @@ func processJob(ctx context.Context, client *http.Client, cfg agentConfig, job m
 	return ackSuccess(ctx, client, cfg, job.ID, finalHash)
 }
 
-func downloadChunk(ctx context.Context, client *http.Client, cfg agentConfig, jobID string, chunkIndex int) ([]byte, string, error) {
+// downloadChunkP2PThenHub fetches a single replication chunk, preferring a
+// direct peer-to-peer fetch from the source device when that peer is
+// currently linked in the P2P mesh. Falls back to the central Hub HTTP
+// endpoint when the source peer is offline or the P2P exchange fails.
+// Returns ("p2p" or "hub", error) so the caller can audit the source.
+func downloadChunkP2PThenHub(ctx context.Context, client *http.Client, cfg agentConfig, manifest models.ReplicationManifest, chunkIndex int) ([]byte, string, error) {
+	// 1. Try a direct P2P pull from the source device, if available.
+	if manifest.SourceDeviceID != "" && p2p.GetInstance().IsPeerConnected(manifest.SourceDeviceID) {
+		payload, err := p2p.GetInstance().PullChunkFromPeer(manifest.SourceDeviceID, manifest.SessionID, chunkIndex, manifest.ChunkSize)
+		if err != nil {
+			log.Printf("[HORSYNC-AGENT] P2P pull for chunk %d failed, falling back to Hub: %v", chunkIndex, err)
+		} else {
+			return payload, "p2p", nil
+		}
+	}
+
+	// 2. Fall back to the central Hub.
+	payload, headerHash, err := downloadChunkFromHub(ctx, client, cfg, manifest.JobID, chunkIndex)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Cross-check the Hub-provided header hash if present.
+	if headerHash != "" {
+		actualHash := hashBytes(payload)
+		if headerHash != actualHash {
+			return nil, "", fmt.Errorf("chunk %d header sha mismatch", chunkIndex)
+		}
+	}
+
+	return payload, "hub", nil
+}
+
+func downloadChunkFromHub(ctx context.Context, client *http.Client, cfg agentConfig, jobID string, chunkIndex int) ([]byte, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(cfg.baseURL, "/")+fmt.Sprintf("/api/agent/jobs/%s/chunks/%d", jobID, chunkIndex), nil)
 	if err != nil {
 		return nil, "", err
@@ -375,7 +422,7 @@ func hashBytes(payload []byte) string {
 // ==========================================
 // Multi-OS Persistence Service Installer
 // ==========================================
-func installService(deviceID, deviceSecret, baseURL, storageDir string, pollSeconds int) {
+func installService(deviceID, deviceSecret, baseURL, storageDir string, pollSeconds, tcpPort, udpPort int) {
 	if deviceID == "" || deviceSecret == "" {
 		log.Fatal("[INSTALL] Device credentials (--device-id, --device-secret) are required for installation")
 	}
@@ -397,8 +444,8 @@ func installService(deviceID, deviceSecret, baseURL, storageDir string, pollSeco
 	case "windows":
 		// Windows Registry Autorun Setup
 		// Escapes parameters safely to run completely silently in background
-		value := fmt.Sprintf(`"%s" --agent --device-id="%s" --device-secret="%s" --base-url="%s" --storage-dir="%s" --poll-seconds=%d`,
-			absExecPath, deviceID, deviceSecret, baseURL, storageDir, pollSeconds)
+		value := fmt.Sprintf(`"%s" --agent --device-id="%s" --device-secret="%s" --base-url="%s" --storage-dir="%s" --poll-seconds=%d --p2p-tcp-port=%d --p2p-udp-port=%d`,
+			absExecPath, deviceID, deviceSecret, baseURL, storageDir, pollSeconds, tcpPort, udpPort)
 
 		cmd := exec.Command("reg", "add", `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, "/v", "HorsyncAgent", "/t", "REG_SZ", "/d", value, "/f")
 		if output, err := cmd.CombinedOutput(); err != nil {
@@ -424,13 +471,13 @@ Description=Horsync Background Sync Agent
 After=network.target
 
 [Service]
-ExecStart=%s --agent --device-id=%s --device-secret=%s --base-url=%s --storage-dir=%s --poll-seconds=%d
+ExecStart=%s --agent --device-id=%s --device-secret=%s --base-url=%s --storage-dir=%s --poll-seconds=%d --p2p-tcp-port=%d --p2p-udp-port=%d
 Restart=always
 RestartSec=10
 
 [Install]
 WantedBy=default.target
-`, absExecPath, deviceID, deviceSecret, baseURL, storageDir, pollSeconds)
+`, absExecPath, deviceID, deviceSecret, baseURL, storageDir, pollSeconds, tcpPort, udpPort)
 
 		serviceFile := filepath.Join(systemdDir, "horsync.service")
 		if err := os.WriteFile(serviceFile, []byte(serviceContent), 0o644); err != nil {
@@ -472,6 +519,8 @@ WantedBy=default.target
 		<string>--base-url=%s</string>
 		<string>--storage-dir=%s</string>
 		<string>--poll-seconds=%d</string>
+		<string>--p2p-tcp-port=%d</string>
+		<string>--p2p-udp-port=%d</string>
 	</array>
 	<key>KeepAlive</key>
 	<true/>
@@ -479,7 +528,7 @@ WantedBy=default.target
 	<true/>
 </dict>
 </plist>
-`, absExecPath, deviceID, deviceSecret, baseURL, storageDir, pollSeconds)
+`, absExecPath, deviceID, deviceSecret, baseURL, storageDir, pollSeconds, tcpPort, udpPort)
 
 		plistFile := filepath.Join(launchAgentDir, "local.horsync.plist")
 		if err := os.WriteFile(plistFile, []byte(plistContent), 0o644); err != nil {

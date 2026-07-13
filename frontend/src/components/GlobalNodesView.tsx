@@ -369,7 +369,7 @@ echo "==================================================="
       <div className="flex items-center justify-between mb-8 border-b border-white/5 pb-6">
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 rounded-xl border border-blue-500/20 bg-[#0a0f1a] flex items-center justify-center shadow-[0_0_20px_rgba(59,130,246,0.1)] overflow-hidden shrink-0">
-            <img src="/logo.svg" alt="Horsync Logo" className="w-8 h-8 object-contain" />
+            <img src="/logo.png" alt="Horsync Logo" className="w-8 h-8 object-contain" />
           </div>
           <div className="flex flex-col">
             <h2 className="text-2xl font-bold text-white tracking-tight font-mono uppercase">{t('nodes.title')}</h2>

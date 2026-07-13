@@ -45,7 +45,7 @@ export function NodeActivity() {
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg border border-blue-500/20 bg-[#0a0f1a] flex items-center justify-center overflow-hidden shrink-0">
-            <img src="/logo.svg" alt="Horsync Logo" className="w-7 h-7 object-contain" />
+            <img src="/logo.png" alt="Horsync Logo" className="w-7 h-7 object-contain" />
           </div>
           <div className="flex flex-col">
             <h2 className="text-lg font-bold text-white tracking-tight font-mono uppercase">{t('nodes.side.title')}</h2>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { EyeOff, Shield, ShieldAlert, ShieldCheck, TimerReset, UploadCloud } from 'lucide-react';
+import { EyeOff, FileLock, FileLock2, Shield, ShieldAlert, ShieldCheck, TimerReset, UploadCloud } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { api } from '../services/api';
 import type { AuditLog } from '../lib/types';
@@ -14,6 +14,9 @@ export function SecurityVaultView() {
   const [vaultPassphrase, setVaultPassphrase] = useState('');
   const [isVaultActive, setIsVaultActive] = useState(false);
   const [vaultStatusMsg, setVaultStatusMsg] = useState('Vault is locked. No encryption keys are loaded.');
+  const [vaultFilePath, setVaultFilePath] = useState('');
+  const [vaultCryptoMsg, setVaultCryptoMsg] = useState<string | null>(null);
+  const [vaultBusy, setVaultBusy] = useState(false);
   const { t, formatDateTime } = useLanguage();
 
   useEffect(() => {
@@ -67,7 +70,7 @@ export function SecurityVaultView() {
       <div className="flex items-center justify-between mb-8 border-b border-white/5 pb-6">
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 rounded-xl border border-blue-500/20 bg-[#0a0f1a] flex items-center justify-center shadow-[0_0_20px_rgba(59,130,246,0.1)] overflow-hidden shrink-0">
-            <img src="/logo.svg" alt="Horsync Logo" className="w-8 h-8 object-contain" />
+            <img src="/logo.png" alt="Horsync Logo" className="w-8 h-8 object-contain" />
           </div>
           <div className="flex flex-col">
             <h2 className="text-2xl font-bold text-white tracking-tight font-mono uppercase">{t('security.title')}</h2>
@@ -264,6 +267,79 @@ export function SecurityVaultView() {
             - Mode: Zero-Knowledge (Decryption key never leaves your local RAM)<br />
             - Distribution: Safe for untrusted P2P node networks
           </div>
+        </div>
+
+        <div className={cn(
+          "mt-6 pt-6 border-t border-white/5 transition-opacity",
+          isVaultActive ? "opacity-100" : "opacity-40 pointer-events-none"
+        )}>
+          <div className="flex items-center gap-2 mb-4">
+            <FileLock className="w-4 h-4 text-purple-400" />
+            <h4 className="text-[10px] font-bold text-white font-mono uppercase tracking-widest">
+              File Encryption / Decryption
+            </h4>
+            <span className="text-[9px] text-gray-600 font-mono uppercase tracking-wider">
+              {isVaultActive ? "(unlock the vault above to enable)" : "(locked)"}
+            </span>
+          </div>
+          <label className="block">
+            <span className="block text-[10px] font-mono text-gray-500 uppercase tracking-wider mb-2">
+              Server-side file path (absolute or relative to the Hub process)
+            </span>
+            <div className="flex gap-3">
+              <input
+                type="text"
+                value={vaultFilePath}
+                onChange={(e) => setVaultFilePath(e.target.value)}
+                placeholder="e.g. data/uploads/<session-id>/<file>.part"
+                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-xs text-white font-mono focus:outline-none focus:border-purple-500/50"
+              />
+              <button
+                type="button"
+                disabled={vaultBusy || !vaultFilePath.trim()}
+                onClick={async () => {
+                  setVaultBusy(true);
+                  setVaultCryptoMsg(null);
+                  try {
+                    const result = await api.vaultEncrypt(vaultFilePath.trim());
+                    setVaultCryptoMsg(`Encrypted -> ${result.outputPath}`);
+                  } catch (err) {
+                    setVaultCryptoMsg('Encrypt failed: ' + (err instanceof Error ? err.message : 'unknown error'));
+                  } finally {
+                    setVaultBusy(false);
+                  }
+                }}
+                className="px-4 py-2 border rounded-xl text-[10px] font-bold font-mono uppercase tracking-wider transition-colors bg-purple-500/15 border-purple-500/20 text-purple-300 hover:bg-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {vaultBusy ? "..." : "Encrypt"}
+              </button>
+              <button
+                type="button"
+                disabled={vaultBusy || !vaultFilePath.trim()}
+                onClick={async () => {
+                  setVaultBusy(true);
+                  setVaultCryptoMsg(null);
+                  try {
+                    const result = await api.vaultDecrypt(vaultFilePath.trim());
+                    setVaultCryptoMsg(`Decrypted -> ${result.outputPath}`);
+                  } catch (err) {
+                    setVaultCryptoMsg('Decrypt failed: ' + (err instanceof Error ? err.message : 'unknown error'));
+                  } finally {
+                    setVaultBusy(false);
+                  }
+                }}
+                className="px-4 py-2 border rounded-xl text-[10px] font-bold font-mono uppercase tracking-wider transition-colors bg-emerald-500/15 border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {vaultBusy ? "..." : "Decrypt"}
+              </button>
+            </div>
+          </label>
+          {vaultCryptoMsg && (
+            <div className="mt-4 p-3 rounded-xl border border-white/5 bg-black/40 text-[10px] font-mono text-gray-300 break-words">
+              <span className="text-gray-500 uppercase tracking-wider">Result: </span>
+              {vaultCryptoMsg}
+            </div>
+          )}
         </div>
       </div>
 

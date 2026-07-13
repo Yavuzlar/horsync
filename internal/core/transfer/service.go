@@ -246,8 +246,16 @@ func (m *Manager) FinalizeUpload(ctx context.Context, sessionID string) (models.
 	}
 	actualSHA256 := hex.EncodeToString(hasher.Sum(nil))
 
+	// Determine the integrity status from the optional client-provided hash.
+	// When the client omitted the expected hash we cannot claim "verified" —
+	// mark it as "skipped" so the UI can distinguish genuine verifications
+	// (client supplied a hash and it matched) from integrity-by-guesswork.
+	expected := strings.ToLower(strings.TrimSpace(session.ExpectedSHA256))
 	integrityStatus := "verified"
-	if expected := strings.ToLower(strings.TrimSpace(session.ExpectedSHA256)); expected != "" && expected != actualSHA256 {
+	switch {
+	case expected == "":
+		integrityStatus = "skipped"
+	case expected != actualSHA256:
 		integrityStatus = "mismatch"
 	}
 
@@ -379,6 +387,25 @@ func (m *Manager) filePathForSession(session models.UploadSession) string {
 	return filepath.Join(m.storagePath, session.ID, base+".part")
 }
 
+// ResolveUploadFile returns the absolute on-disk path for a stored upload session.
+// It looks up the session metadata from the database and applies the configured
+// upload storage directory, so callers do not need to hard-code "data/uploads".
+// This is the canonical resolver used by both the P2P chunk handler and the
+// metadata wipe handler.
+func (m *Manager) ResolveUploadFile(ctx context.Context, sessionID string) (string, error) {
+	db := config.GetDatabase()
+	if db == nil || db.Pool == nil {
+		return "", ErrUploadStorageUnavailable
+	}
+
+	session, err := db.GetUploadSession(ctx, sessionID)
+	if err != nil {
+		return "", ErrUploadSessionNotFound
+	}
+
+	return m.filePathForSession(session), nil
+}
+
 func (m *Manager) fileEntryForSession(session models.UploadSession) (models.File, error) {
 	files, err := config.GetDatabase().ListFiles(context.Background())
 	if err != nil {
@@ -397,6 +424,9 @@ func (m *Manager) fileEntryForSession(session models.UploadSession) (models.File
 	}
 	if session.IntegrityStatus == "mismatch" {
 		statuses = append(statuses, "SHA256_MISMATCH")
+	}
+	if session.IntegrityStatus == "skipped" {
+		statuses = append(statuses, "INTEGRITY_SKIPPED")
 	}
 
 	return models.File{

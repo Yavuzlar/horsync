@@ -5,6 +5,7 @@ import { FileExplorer } from './components/FileExplorer';
 import { NodeActivity } from './components/NodeActivity';
 import { GlobalNodesView } from './components/GlobalNodesView';
 import { SecurityVaultView } from './components/SecurityVaultView';
+import { AutomationRulesView } from './components/AutomationRulesView';
 import { SettingsView } from './components/SettingsView';
 import { LoginView } from './components/LoginView';
 import { api } from './services/api';
@@ -114,7 +115,7 @@ export default function App() {
           {/* Central breathing & floating logo box */}
           <div className="relative z-10 w-24 h-24 rounded-3xl bg-[#0a0f1a] border border-white/10 flex items-center justify-center shadow-[0_0_50px_rgba(59,130,246,0.25)] animate-float-slow">
             <img
-              src="/logo.svg"
+              src="/logo.png"
               alt="Horsync Logo"
               className="w-16 h-16 object-contain"
               referrerPolicy="no-referrer"
@@ -167,6 +168,7 @@ export default function App() {
           )}
           {activeTab === 'explorer' && <FileExplorer />}
           {activeTab === 'nodes' && <GlobalNodesView />}
+          {activeTab === 'automation' && <AutomationRulesView />}
           {activeTab === 'security' && <SecurityVaultView />}
           {activeTab === 'settings' && <SettingsView />}
         </main>
